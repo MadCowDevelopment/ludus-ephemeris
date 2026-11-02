@@ -45,20 +45,10 @@ export interface HistoricalRanking {
   source: string;
 }
 
-export interface Prediction {
-  id: string;
-  year: number;
-  gameName: string;
-  rank?: number;
-  predictedPlays?: number;
-  sourceText: string;
-}
-
 export interface WorkspaceData {
   games: Game[];
   plays: Play[];
   rankings: HistoricalRanking[];
-  predictions: Prediction[];
 }
 
 export interface GameSummary {

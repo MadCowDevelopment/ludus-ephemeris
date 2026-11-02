@@ -42,7 +42,6 @@ The source workbook is `Cost for games per hour.xlsx`. It contains annual play l
 - Provide collection review lists for unplayed solo and multiplayer games, games not played recently, and play counts by year.
 - Show remaining plays to cost/value targets, games in price bands, and money spent on games with no plays or high purchase prices.
 - Provide charts for play-count distribution and acquisition spending over time. Let users filter statistics by year or date range and open a game or play from a chart/list where applicable.
-- Preserve the workbook's historical prediction lists as records that can be viewed alongside actual annual plays. Predictions are historical data, not automatically generated forecasts.
 
 ## Product requirements from the request
 
@@ -65,7 +64,7 @@ The source workbook is `Cost for games per hour.xlsx`. It contains annual play l
 
 ### Cloud storage and account data
 
-- Store the user's collection, plays, predictions, and preferences in cloud storage and make them available on both apps.
+- Store the user's collection, plays, and preferences in cloud storage and make them available on both apps.
 - Use the selected Firebase Authentication and Cloud Firestore backend so native Android and web clients share accounts and data.
 - Sign in with Google; keep each account's records private and separate from every other user's records.
 - Keep personal data private to its account. Design for reliable synchronization and recovery rather than treating a device or spreadsheet as the only copy.

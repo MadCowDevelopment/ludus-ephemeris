@@ -25,6 +25,7 @@ import type { User } from "firebase/auth";
 import type { Game, Play, PlayType, WorkspaceData } from "./types";
 import { readDemoWorkspace, saveDemoWorkspace } from "./data/demo";
 import { firebaseConfigured } from "./lib/firebase-config";
+import { bggImagePageUrl, parseCoverImageUrl } from "./lib/image-url";
 import type { ImportProgress } from "./lib/repository";
 import {
   mergeImportedWorkspace,
@@ -75,6 +76,8 @@ function targetPlays(summary: ReturnType<typeof buildGameSummaries>[number], tar
 }
 
 function GameCover({ game, small = false }: { game: Game; small?: boolean }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => setImageFailed(false), [game.coverUrl]);
   const seed = [...game.name].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const palettes = [
     ["#192248", "#d4eb47", "#f06b4d"],
@@ -84,8 +87,8 @@ function GameCover({ game, small = false }: { game: Game; small?: boolean }) {
     ["#453224", "#e06d4d", "#e8d96d"],
   ];
   const [ink, accent, light] = palettes[seed % palettes.length];
-  if (game.coverUrl) {
-    return <img className={`game-cover${small ? " game-cover--small" : ""}`} src={game.coverUrl} alt="" loading="lazy" />;
+  if (game.coverUrl && !imageFailed) {
+    return <img className={`game-cover${small ? " game-cover--small" : ""}`} src={game.coverUrl} alt={`${game.name} box cover`} loading="lazy" onError={() => setImageFailed(true)} />;
   }
   return (
     <svg
@@ -119,6 +122,7 @@ function App() {
   const [gameFormName, setGameFormName] = useState("");
   const [gameFormDuration, setGameFormDuration] = useState("1");
   const [gameFormSolo, setGameFormSolo] = useState(false);
+  const [gameFormImageLink, setGameFormImageLink] = useState("");
   const [query, setQuery] = useState("");
   const [playsQuery, setPlaysQuery] = useState("");
   const [playsYear, setPlaysYear] = useState("all");
@@ -187,14 +191,14 @@ function App() {
     import("./lib/repository")
       .then(({ subscribeToUserData }) => {
         if (!active) return;
-        subscriptions = (["games", "plays", "rankings", "predictions"] as const).map((kind) =>
+        subscriptions = (["games", "plays", "rankings"] as const).map((kind) =>
           subscribeToUserData(
             cloudUserId,
             kind,
             (records) => {
               setData((current) => ({ ...current, [kind]: records } as WorkspaceData));
               received.add(kind);
-              if (received.size >= 4) setIsLoading(false);
+              if (received.size >= 3) setIsLoading(false);
             },
             (reason) => {
               setError(`Could not sync ${kind}: ${reason.message}`);
@@ -351,6 +355,13 @@ function App() {
       setError("Enter a typical duration greater than zero.");
       return;
     }
+    const coverUrl = gameFormImageLink.trim()
+      ? parseCoverImageUrl(gameFormImageLink)
+      : undefined;
+    if (gameFormImageLink.trim() && !coverUrl) {
+      setError("Enter a secure direct image URL. A BoardGameGeek /image/ID page is not a direct image.");
+      return;
+    }
     try {
       await saveRecord("games", {
         id: recordId("game"),
@@ -358,15 +369,32 @@ function App() {
         owned: true,
         solo: gameFormSolo,
         defaultDurationHours: duration,
+        coverUrl,
       });
       setGameFormName("");
       setGameFormDuration("1");
       setGameFormSolo(false);
+      setGameFormImageLink("");
       setGameFormOpen(false);
       setError("");
       setNotice(`${name} added to your collection.`);
     } catch (reason) {
       setError(`Could not add this game: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+  }
+
+  async function handleSaveImageLink(game: Game, link: string) {
+    const coverUrl = link.trim() ? parseCoverImageUrl(link) : undefined;
+    if (link.trim() && !coverUrl) {
+      setError("Enter a secure direct image URL. A BoardGameGeek /image/ID page is not a direct image.");
+      return;
+    }
+    try {
+      await saveRecord("games", { ...game, coverUrl });
+      setError("");
+      setNotice(coverUrl ? `Cover image saved for ${game.name}.` : `Cover image removed from ${game.name}.`);
+    } catch (reason) {
+      setError(`Could not update ${game.name}: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
   }
 
@@ -382,7 +410,6 @@ function App() {
         imported.data.games.length === 0 &&
         imported.data.plays.length === 0 &&
         imported.data.rankings.length === 0 &&
-        imported.data.predictions.length === 0 &&
         imported.skippedPlayRows.length === 0
       ) {
         throw new Error("No collection or yearly play records were found. Check that the workbook has an Overview sheet and year sheets with Date, Name, and Duration columns.");
@@ -399,7 +426,7 @@ function App() {
   async function confirmImport() {
     if (!pendingImport) return;
     const importData = prepareWorkbookImport(pendingImport, data);
-    setImportProgress({ completed: 0, total: importData.games.length + importData.plays.length + importData.rankings.length + importData.predictions.length });
+    setImportProgress({ completed: 0, total: importData.games.length + importData.plays.length + importData.rankings.length });
     try {
       if (cloudUserId) {
         const { importUserWorkspace } = await import("./lib/repository");
@@ -559,7 +586,10 @@ function App() {
               setGameFormDuration={setGameFormDuration}
               gameFormSolo={gameFormSolo}
               setGameFormSolo={setGameFormSolo}
+              gameFormImageLink={gameFormImageLink}
+              setGameFormImageLink={setGameFormImageLink}
               onAddGame={handleAddGame}
+              onSaveImageLink={handleSaveImageLink}
               fileInput={fileInput}
               onFile={handleFile}
               isParsing={isParsing}
@@ -856,7 +886,10 @@ function CollectionPage({
   setGameFormDuration,
   gameFormSolo,
   setGameFormSolo,
+  gameFormImageLink,
+  setGameFormImageLink,
   onAddGame,
+  onSaveImageLink,
   fileInput,
   onFile,
   isParsing,
@@ -886,7 +919,10 @@ function CollectionPage({
   setGameFormDuration: (duration: string) => void;
   gameFormSolo: boolean;
   setGameFormSolo: (solo: boolean) => void;
+  gameFormImageLink: string;
+  setGameFormImageLink: (link: string) => void;
   onAddGame: (event: FormEvent<HTMLFormElement>) => void;
+  onSaveImageLink: (game: Game, link: string) => void;
   fileInput: React.RefObject<HTMLInputElement | null>;
   onFile: (file: File | undefined) => void;
   isParsing: boolean;
@@ -899,7 +935,7 @@ function CollectionPage({
 }) {
   const recordCount = pendingImport
     ? pendingImport.data.games.length + pendingImport.data.plays.length +
-      pendingImport.data.rankings.length + pendingImport.data.predictions.length
+      pendingImport.data.rankings.length
     : 0;
 
   return (
@@ -926,7 +962,6 @@ function CollectionPage({
             <div><strong>{pendingImport.data.games.length.toLocaleString()}</strong><span>collection titles</span></div>
             <div><strong>{pendingImport.data.plays.length.toLocaleString()}</strong><span>plays across {pendingImport.years.length} years</span></div>
             <div><strong>{pendingImport.data.rankings.length.toLocaleString()}</strong><span>historical ranking entries</span></div>
-            <div><strong>{pendingImport.data.predictions.length.toLocaleString()}</strong><span>prediction entries</span></div>
           </div>
           {(pendingImport.missingCatalogGames.length > 0 || pendingImport.duplicateGameNames.length > 0 || pendingImport.skippedPlayRows.length > 0) && (
             <div className="import-warning">
@@ -940,7 +975,7 @@ function CollectionPage({
               </ul>
             </div>
           )}
-          <p className="import-preserve">Legacy fields are preserved. Formula-derived values are recalculated from source records; historical ranks and predictions remain separate.</p>
+          <p className="import-preserve">Legacy fields are preserved. Formula-derived values are recalculated from source records; historical ranks remain separate.</p>
           {importProgress ? (
             <div className="import-progress"><span>Importing {importProgress.completed.toLocaleString()} of {importProgress.total.toLocaleString()} records</span><progress value={importProgress.completed} max={Math.max(importProgress.total, 1)} /></div>
           ) : (
@@ -954,6 +989,7 @@ function CollectionPage({
           <div className="form-heading"><div><span className="section-index">NEW TITLE</span><h2>Add a game</h2></div><button type="button" className="icon-button" aria-label="Close form" onClick={() => setGameFormOpen(false)}><X size={17} /></button></div>
           <label className="field"><span>Game name</span><input autoFocus value={gameFormName} onChange={(event) => setGameFormName(event.target.value)} placeholder="Enter the title" required /></label>
           <label className="field"><span>Typical duration · hours</span><input type="number" min="0.05" step="0.05" value={gameFormDuration} onChange={(event) => setGameFormDuration(event.target.value)} required /></label>
+          <label className="field"><span>Cover image URL <em>optional</em></span><input type="url" value={gameFormImageLink} onChange={(event) => setGameFormImageLink(event.target.value)} placeholder="https://cf.geekdo-images.com/…" /><small className="image-url-hint">Paste the direct image address, not the BGG /image/ID page link.</small></label>
           <label className="check-field"><input type="checkbox" checked={gameFormSolo} onChange={(event) => setGameFormSolo(event.target.checked)} /><span>Supports solo play</span></label>
           <div className="form-actions"><button className="button button--primary" type="submit">Add to collection</button></div>
         </form>
@@ -981,6 +1017,7 @@ function CollectionPage({
                   item={item}
                   expanded={expandedGame === item.game.id}
                   onToggle={() => setExpandedGame(expandedGame === item.game.id ? "" : item.game.id)}
+                  onSaveImageLink={onSaveImageLink}
                 />
               ))}
             </tbody>
@@ -994,7 +1031,23 @@ function CollectionPage({
   );
 }
 
-function FragmentRow({ item, expanded, onToggle }: { item: ReturnType<typeof buildGameSummaries>[number]; expanded: boolean; onToggle: () => void }) {
+function FragmentRow({
+  item,
+  expanded,
+  onToggle,
+  onSaveImageLink,
+}: {
+  item: ReturnType<typeof buildGameSummaries>[number];
+  expanded: boolean;
+  onToggle: () => void;
+  onSaveImageLink: (game: Game, link: string) => void;
+}) {
+  const [imageLink, setImageLink] = useState(item.game.coverUrl ?? "");
+  const bggImageUrl = bggImagePageUrl(item.game.imageId ?? "");
+  useEffect(() => {
+    setImageLink(item.game.coverUrl ?? "");
+  }, [item.game.coverUrl]);
+
   return (
     <>
       <tr className={`collection-row${expanded ? " collection-row--expanded" : ""}`}>
@@ -1013,6 +1066,27 @@ function FragmentRow({ item, expanded, onToggle }: { item: ReturnType<typeof bui
               <span className="section-index">GAME RECORD</span>
               <h3>{item.game.name}</h3>
               <p>{item.game.owned ? (item.game.location || "In your collection") : "Played title not marked as owned"}{item.game.purchaseDate ? ` · Added ${formatPlayDate(item.game.purchaseDate)}` : ""}</p>
+              {bggImageUrl && (
+                <a className="external-record-link" href={bggImageUrl} target="_blank" rel="noreferrer">
+                  Open image on BoardGameGeek <ArrowUpRight size={13} />
+                </a>
+              )}
+              <form className="game-image-form" onSubmit={(event) => {
+                event.preventDefault();
+                onSaveImageLink(item.game, imageLink);
+              }}>
+                <label className="field">
+                  <span>Cover image URL <em>optional</em></span>
+                  <input
+                    type="url"
+                    value={imageLink}
+                    onChange={(event) => setImageLink(event.target.value)}
+                    placeholder="https://cf.geekdo-images.com/…"
+                  />
+                  <small className="image-url-hint">Open the BGG image above, right-click the large image, choose “Copy image address,” then paste it here.</small>
+                </label>
+                <button className="button button--outline button--small" type="submit">Save cover</button>
+              </form>
               <div className="detail-stats">
                 <div><span>Plays</span><strong>{item.plays}</strong></div>
                 <div><span>Hours</span><strong>{formatHours(item.hours)}</strong></div>

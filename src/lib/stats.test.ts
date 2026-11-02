@@ -39,7 +39,7 @@ describe("collection statistics", () => {
   });
 
   it("summarizes years and collection totals from play records", () => {
-    const summary = summarizeCollection({ games, plays, rankings: [], predictions: [] });
+    const summary = summarizeCollection({ games, plays, rankings: [] });
 
     expect(summarizeYears(plays)).toEqual([
       { year: 2024, plays: 1, hours: 1.5 },

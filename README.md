@@ -46,7 +46,7 @@ The app does not configure Firebase for you. Google sign-in, Firestore, hosting,
 
 ## Workbook migration
 
-Use **Collection → Import workbook** to preview an `.xlsx` or `.xlsm` workbook before merging it with the current archive. The importer reads the `Overview` catalog, year sheets with `Date`, `Name`, and `Duration` columns, historical ranking sheets (`PC100` and `Fame`), and `Predictions`. Go records are out of scope.
+Use **Collection → Import workbook** to preview an `.xlsx` or `.xlsm` workbook before merging it with the current archive. The importer reads the `Overview` catalog, year sheets with `Date`, `Name`, and `Duration` columns, and historical ranking sheets (`PC100` and `Fame`). Prediction sheets and Go records are ignored.
 
 The preview reports duplicate catalog names, play titles missing from the catalog, and play rows skipped for an unreadable date or invalid duration. Extra source columns are retained as legacy fields. Formula cells are not treated as source records; derived metrics are recalculated from imported plays and catalog data. Import uses stable record IDs so a partially completed cloud import can be retried without duplicating those rows.
 

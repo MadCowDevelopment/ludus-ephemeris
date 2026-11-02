@@ -37,7 +37,7 @@ async function createWorkbookFile(): Promise<File> {
 }
 
 describe("workbook import", () => {
-  it("imports catalog, plays, historical rankings, and predictions while reporting invalid rows", async () => {
+  it("imports catalog, plays, and historical rankings while ignoring predictions and reporting invalid rows", async () => {
     const imported = await readWorkbook(await createWorkbookFile());
 
     expect(imported.data.games).toHaveLength(2);
@@ -51,14 +51,12 @@ describe("workbook import", () => {
       { sheet: "2025", row: 5, gameName: "Bad duration", reason: "Missing or invalid duration" },
     ]);
     expect(imported.data.rankings).toHaveLength(3);
-    expect(imported.data.predictions).toMatchObject([
-      { year: 2025, gameName: "Wingspan", rank: 1, predictedPlays: 4 },
-    ]);
+    expect(imported.data).not.toHaveProperty("predictions");
   });
 
   it("links imported plays to their catalog titles", async () => {
     const imported = await readWorkbook(await createWorkbookFile());
-    const emptyWorkspace: WorkspaceData = { games: [], plays: [], rankings: [], predictions: [] };
+    const emptyWorkspace: WorkspaceData = { games: [], plays: [], rankings: [] };
     const prepared = prepareWorkbookImport(imported, emptyWorkspace);
 
     expect(prepared.plays).toHaveLength(2);
