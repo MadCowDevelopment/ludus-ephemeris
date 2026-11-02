@@ -5,7 +5,6 @@ import type {
   LegacyValue,
   Play,
   PlayType,
-  Prediction,
   WorkspaceData,
 } from "../types";
 import { normalizeName } from "./stats";
@@ -282,39 +281,6 @@ function parseHistoricalRankings(workbook: ExcelJS.Workbook): HistoricalRanking[
   return rankings;
 }
 
-function parsePredictions(workbook: ExcelJS.Workbook): Prediction[] {
-  const sheet = workbook.getWorksheet("Predictions");
-  if (!sheet) return [];
-  const predictions: Prediction[] = [];
-  let year: number | undefined;
-  let rank = 0;
-  for (let row = 1; row <= sheet.rowCount; row += 1) {
-    const value = readCell(sheet.getCell(row, 1).value);
-    if (typeof value !== "string" || !value.trim()) continue;
-    const headerYear = value.match(/\b(20\d{2})\b/);
-    if (/prediction|most played/i.test(value) && headerYear) {
-      year = Number(headerYear[1]);
-      rank = 0;
-      continue;
-    }
-    if (year === undefined) continue;
-    const entry = value.trim().match(/^(?:(\d+)\s+)?(.+?)(?:\s+(\d+))?$/);
-    if (!entry || !entry[2].trim()) continue;
-    rank += 1;
-    const listedRank = entry[1] ? Number(entry[1]) : rank;
-    const predictedPlays = entry[3] ? Number(entry[3]) : undefined;
-    predictions.push({
-      id: `prediction-${year}-${row}`,
-      year,
-      gameName: entry[2].trim(),
-      rank: listedRank,
-      predictedPlays,
-      sourceText: value,
-    });
-  }
-  return predictions;
-}
-
 export async function readWorkbook(file: File): Promise<WorkbookImport> {
   const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
@@ -333,7 +299,6 @@ export async function readWorkbook(file: File): Promise<WorkbookImport> {
       games: catalog.games,
       plays: playData.plays,
       rankings: parseHistoricalRankings(workbook),
-      predictions: parsePredictions(workbook),
     },
     sourceName: file.name,
     duplicateGameNames: catalog.duplicates,
@@ -389,7 +354,6 @@ export function prepareWorkbookImport(
     games: [...importGames, ...missingGames],
     plays: importedPlays,
     rankings: workbookImport.data.rankings,
-    predictions: workbookImport.data.predictions,
   };
 }
 
@@ -403,6 +367,5 @@ export function mergeImportedWorkspace(current: WorkspaceData, imported: Workspa
     games: mergeById(current.games, imported.games),
     plays: mergeById(current.plays, imported.plays),
     rankings: mergeById(current.rankings, imported.rankings),
-    predictions: mergeById(current.predictions, imported.predictions),
   };
 }

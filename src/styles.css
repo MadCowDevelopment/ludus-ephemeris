@@ -286,7 +286,7 @@ a { color: inherit; }
 .import-actions, .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .import-progress { display: grid; gap: 9px; margin-top: 15px; color: #d3d6e4; font-size: 10px; }
 .import-progress progress { width: 100%; height: 7px; accent-color: var(--lime); }
-.add-game-form { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto; align-items: end; gap: 14px; background: #fff; border: 1px solid var(--rule); box-shadow: none; }
+.add-game-form { display: grid; grid-template-columns: 1.2fr .8fr 1.5fr auto auto; align-items: end; gap: 14px; background: #fff; border: 1px solid var(--rule); box-shadow: none; }
 .add-game-form .form-heading { grid-column: 1 / -1; margin: 0; }
 .add-game-form .check-field { align-self: center; }
 .check-field { display: flex; align-items: center; gap: 8px; color: #4f5361; font-size: 10px; }
@@ -326,6 +326,11 @@ a { color: inherit; }
 .game-detail-main { flex: 1; }
 .game-detail h3 { margin: 5px 0; color: var(--navy); font-family: ui-sans-serif, "Segoe UI", sans-serif; font-size: 17px; letter-spacing: -.04em; }
 .game-detail p { margin: 0; color: var(--muted); font-size: 9px; }
+.external-record-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; color: var(--blue); font-size: 10px; font-weight: 600; text-decoration: none; }
+.external-record-link:hover { color: var(--blue-dark); text-decoration: underline; }
+.game-image-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; max-width: 650px; margin-top: 13px; }
+.game-image-form .button { margin-bottom: 1px; }
+.image-url-hint { color: var(--muted); font-size: 9px; font-weight: 400; line-height: 1.4; }
 .detail-stats { display: flex; flex-wrap: wrap; gap: 19px; margin-top: 16px; }
 .detail-stats div { display: grid; gap: 4px; }
 .detail-stats span { color: var(--muted); font-size: 8px; text-transform: uppercase; letter-spacing: .08em; }
@@ -485,6 +490,8 @@ a { color: inherit; }
   .add-game-form { grid-template-columns: 1fr; padding: 16px; }
   .add-game-form .form-heading { grid-column: auto; }
   .add-game-form .form-actions .button { width: 100%; }
+  .game-image-form { grid-template-columns: 1fr; }
+  .game-image-form .button { width: fit-content; }
   .collection-toolbar, .plays-toolbar { align-items: stretch; flex-direction: column; }
   .search-field { min-width: 0; width: 100%; }
   .collection-filters { flex-wrap: wrap; justify-content: space-between; }

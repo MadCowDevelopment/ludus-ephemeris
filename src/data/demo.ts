@@ -57,7 +57,6 @@ export const demoWorkspace: WorkspaceData = {
   games: demoGames,
   plays: samplePlays,
   rankings: [],
-  predictions: [],
 };
 
 export function readDemoWorkspace(): WorkspaceData {
@@ -77,7 +76,6 @@ export function readDemoWorkspace(): WorkspaceData {
         games: parsed.games as Game[],
         plays: parsed.plays as Play[],
         rankings: Array.isArray((parsed as WorkspaceData).rankings) ? (parsed as WorkspaceData).rankings : [],
-        predictions: Array.isArray((parsed as WorkspaceData).predictions) ? (parsed as WorkspaceData).predictions : [],
       };
     }
   } catch {
