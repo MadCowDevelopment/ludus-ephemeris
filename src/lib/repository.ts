@@ -2,30 +2,14 @@ import {
   collection,
   doc,
   getDocs,
-  onSnapshot,
   setDoc,
   writeBatch,
-  type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { removeUndefinedFields } from "./firestore-data";
 import type { Game, HistoricalRanking, Play, WorkspaceData } from "../types";
 
 export type DataKind = "games" | "plays" | "rankings";
-
-export function subscribeToUserData(
-  userId: string,
-  kind: DataKind,
-  onData: (records: Array<Game | Play | HistoricalRanking>) => void,
-  onError: (error: Error) => void,
-): Unsubscribe {
-  if (!db) throw new Error("Cloud storage is not configured.");
-  return onSnapshot(
-    collection(db, "users", userId, kind),
-    (snapshot) => onData(snapshot.docs.map((entry) => ({ ...entry.data(), id: entry.id }) as Game | Play | HistoricalRanking)),
-    onError,
-  );
-}
 
 export async function saveUserRecord(
   userId: string,
