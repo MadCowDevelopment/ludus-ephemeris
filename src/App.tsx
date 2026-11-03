@@ -16,6 +16,7 @@ import {
   ListFilter,
   LogOut,
   Plus,
+  RefreshCw,
   Search,
   Sparkles,
   Upload,
@@ -115,6 +116,7 @@ function App() {
   const [signedOut, setSignedOut] = useState(false);
   const [data, setData] = useState<WorkspaceData>(() => readDemoWorkspace());
   const [isLoading, setIsLoading] = useState(false);
+  const [cloudRefreshVersion, setCloudRefreshVersion] = useState(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [quickLogOpen, setQuickLogOpen] = useState(false);
@@ -185,37 +187,25 @@ function App() {
     if (!cloudUserId) return;
     setIsLoading(true);
     setError("");
-    const received = new Set<string>();
     let active = true;
-    let subscriptions: Array<() => void> = [];
-    import("./lib/repository")
-      .then(({ subscribeToUserData }) => {
-        if (!active) return;
-        subscriptions = (["games", "plays", "rankings"] as const).map((kind) =>
-          subscribeToUserData(
-            cloudUserId,
-            kind,
-            (records) => {
-              setData((current) => ({ ...current, [kind]: records } as WorkspaceData));
-              received.add(kind);
-              if (received.size >= 3) setIsLoading(false);
-            },
-            (reason) => {
-              setError(`Could not sync ${kind}: ${reason.message}`);
-              setIsLoading(false);
-            },
-          ),
-        );
-      })
-      .catch((reason: unknown) => {
-        setError(`Could not load cloud storage: ${reason instanceof Error ? reason.message : String(reason)}`);
-        setIsLoading(false);
-      });
+    setData({ games: [], plays: [], rankings: [] });
+    void (async () => {
+      try {
+        const { fetchUserWorkspace } = await import("./lib/repository");
+        const workspace = await fetchUserWorkspace(cloudUserId);
+        if (active) setData(workspace);
+      } catch (reason) {
+        if (active) {
+          setError(`Could not load cloud storage: ${reason instanceof Error ? reason.message : String(reason)}`);
+        }
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    })();
     return () => {
       active = false;
-      subscriptions.forEach((unsubscribe) => unsubscribe());
     };
-  }, [cloudUserId]);
+  }, [cloudUserId, cloudRefreshVersion]);
 
   const summary = useMemo(() => summarizeCollection(data), [data]);
   const gamesById = useMemo(() => new Map(data.games.map((game) => [game.id, game])), [data.games]);
@@ -280,6 +270,24 @@ function App() {
     if (cloudUserId) {
       const { saveUserRecord } = await import("./lib/repository");
       await saveUserRecord(cloudUserId, kind, record);
+      setData((current) => {
+        if (kind === "games") {
+          const game = record as Game;
+          return {
+            ...current,
+            games: current.games.some((item) => item.id === game.id)
+              ? current.games.map((item) => item.id === game.id ? game : item)
+              : [...current.games, game],
+          };
+        }
+        const play = record as Play;
+        return {
+          ...current,
+          plays: current.plays.some((item) => item.id === play.id)
+            ? current.plays.map((item) => item.id === play.id ? play : item)
+            : [play, ...current.plays],
+        };
+      });
     } else {
       setData((current) => {
         if (kind === "games") {
@@ -523,8 +531,17 @@ function App() {
           <div className="breadcrumb"><span>Archive</span><ArrowRight size={13} /><strong>{section}</strong></div>
           <div className="topbar-right">
             <span className={`connection-state${demoMode ? " connection-state--demo" : ""}`}>
-              <span className="connection-dot" />{demoMode ? "Sample data" : isLoading ? "Syncing" : "Synced"}
+              <span className="connection-dot" />{demoMode ? "Sample data" : isLoading ? "Loading" : "Cloud data"}
             </span>
+            {cloudUserId && (
+              <button
+                className="button button--quiet button--small"
+                onClick={() => setCloudRefreshVersion((version) => version + 1)}
+                disabled={isLoading}
+              >
+                <RefreshCw size={13} /> Refresh
+              </button>
+            )}
             {firebaseConfigured && demoMode && <button className="button button--quiet button--small" onClick={handleGoogleSignIn}>Sign in</button>}
             {!firebaseConfigured && <button className="help-link" onClick={() => setNotice("To connect your private account, add Firebase web credentials to .env.local and enable Google sign-in in Firebase Console.")}><CircleHelp size={15} /> Setup</button>}
           </div>

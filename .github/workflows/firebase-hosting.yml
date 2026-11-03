@@ -1,0 +1,45 @@
+name: Deploy Firebase Hosting
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_LUDUS_EPHEMERIS != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      - name: Deploy to Firebase Hosting
+        if: env.HAS_SERVICE_ACCOUNT == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_LUDUS_EPHEMERIS }}
+          projectId: ludus-ephemeris
+          channelId: live
+
+      - name: Deployment skipped
+        if: env.HAS_SERVICE_ACCOUNT != 'true'
+        run: echo "::warning::Firebase deployment skipped. Configure the FIREBASE_SERVICE_ACCOUNT_LUDUS_EPHEMERIS repository secret."

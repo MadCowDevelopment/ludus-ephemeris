@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Without Firebase settings, the app opens in **sample mode**. Sample records and edits are saved in this browser's local storage; they are not cloud-backed. Use the collection's JSON export to keep a portable copy of preview data.
+The app is configured for the `ludus-ephemeris` Firebase project. You can also explore the sample archive; sample records and edits are saved in this browser's local storage and are not cloud-backed.
 
 Run the production checks with:
 
@@ -22,7 +22,7 @@ npm run build
 
 ## Connect Firebase
 
-Create a Firebase project on the Spark plan, enable Google as an Authentication provider, and create a Cloud Firestore database. Copy `.env.example` to `.env.local` and fill in the Firebase web app configuration:
+The app uses the public web app configuration in `src/lib/firebase-config.ts`. These client-side identifiers are not secrets. To point a local build at another Firebase project, copy `.env.example` to `.env.local` and provide overrides:
 
 ```dotenv
 VITE_FIREBASE_API_KEY=
@@ -42,7 +42,21 @@ npm run build
 firebase deploy --only firestore:rules,hosting
 ```
 
-The app does not configure Firebase for you. Google sign-in, Firestore, hosting, and the environment values must all be set up in your own Firebase project before cloud storage is available.
+Google sign-in, Firestore, and Hosting are configured in the Firebase project. Firestore records are stored below `users/{uid}/`; `firestore.rules` restricts access to the matching signed-in user. Never put service-account keys in the browser app.
+
+### Automatic deployment
+
+The GitHub Actions workflow builds and tests on pushes to `master`, then deploys to the live Firebase Hosting site. It also supports manual runs from the repository's **Actions** tab. Deployment is skipped with a warning until its Firebase deployment credential is set.
+
+To configure deployment without manually creating a Google Cloud service-account key:
+
+1. Install and sign in to the Firebase CLI, then select the `ludus-ephemeris` project.
+2. Run `firebase init hosting:github` and authorize the GitHub repository. Firebase creates a deployment service account and uploads its key to the repository as the `FIREBASE_SERVICE_ACCOUNT_LUDUS_EPHEMERIS` Actions secret.
+3. Keep this repository's existing master-push workflow; it already builds, tests, and deploys the app. Do not add a separate pull-request deploy workflow unless preview deployments are wanted.
+
+The Firebase project must have Hosting initialized. The workflow deploys Hosting only; deploy Firestore rules separately with `firebase deploy --only firestore:rules` when they change.
+
+Signed-in records are loaded once when the app opens and can be reloaded with **Refresh**. Updates made in this app appear immediately; changes from another tab or device appear after refreshing. This avoids continuous Firestore listeners, which can incur additional reads when records change or connections restart.
 
 ## Workbook migration
 
