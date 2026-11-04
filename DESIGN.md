@@ -11,7 +11,9 @@ Ludus Ephemeris is a personal statistical yearbook for board-game collections an
 - **Action color:** cobalt for primary actions, links, and selected states.
 - **Accent:** chartreuse for play-history charts and occasional emphasis; use coral sparingly.
 - **Typography:** platform system sans-serif; use tabular figures and restrained letter spacing for numerical data.
+- **Readability:** body text starts at 16px; supporting labels stay legible and subordinate rather than being reduced to microcopy.
 - **Structure:** persistent left navigation on desktop, clear section headings, ruled data tables, restrained radii, and generous but efficient spacing.
+- **Brand mark:** a recognizable meeple holding a quill, reused as the browser favicon.
 - **Game art:** small illustrative or cached cover thumbnails as an accent. Keep charts and records visually dominant; never use oversized art as the primary content.
 
 ## Page hierarchy

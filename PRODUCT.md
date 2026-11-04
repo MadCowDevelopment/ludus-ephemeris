@@ -40,7 +40,7 @@ The source is `Cost for games per hour.xlsx`, with collection details, annual pl
 ## Brand Commitments
 
 - The website name is **Ludus Ephemeris**, matching the repository name.
-- No other visual identity, logo, or brand assets are established.
+- The visual mark is a classic meeple holding a quill, used in the web navigation and favicon.
 - Use synthetic box-cover illustrations as small accents; keep the statistics and records visually dominant.
 
 ## Evidence on Hand

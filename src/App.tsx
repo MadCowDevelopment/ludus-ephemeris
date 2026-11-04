@@ -41,7 +41,7 @@ import {
 } from "./lib/workbook";
 import { buildGameSummaries, normalizeName, summarizeCollection } from "./lib/stats";
 
-type Section = "Overview" | "Collection" | "Plays" | "Insights";
+type Section = "Overview" | "Collection" | "Plays" | "Insights" | "Yearly";
 type CollectionSort = "name" | "plays" | "hours" | "cost" | "rating" | "lastPlayed";
 type SortDirection = "asc" | "desc";
 
@@ -50,6 +50,7 @@ const navigation: Array<{ label: Section; icon: typeof Home }> = [
   { label: "Collection", icon: LibraryBig },
   { label: "Plays", icon: Clock3 },
   { label: "Insights", icon: ChartColumnIncreasing },
+  { label: "Yearly", icon: BookOpen },
 ];
 
 const currency = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
@@ -71,8 +72,10 @@ function recordId(prefix: string): string {
 
 function MeepleMark({ size = 20 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 2.5a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6ZM10.2 9.5c-1.6 0-2.9 1.1-3.3 2.6l-1 4.1c-.2.9.9 1.5 1.6.9L9 15.8v4.7c0 .8.6 1.4 1.4 1.4h3.2c.8 0 1.4-.6 1.4-1.4v-4.7l1.5 1.3c.7.6 1.8 0 1.6-.9l-1-4.1c-.4-1.5-1.7-2.6-3.3-2.6h-3.6Z" />
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
+      <path d="M16 3.2a4.2 4.2 0 1 0 0 8.4 4.2 4.2 0 0 0 0-8.4ZM12.3 12.5c-2.1 0-3.9 1.4-4.4 3.4l-1.3 5.2c-.3 1.1 1 1.8 1.9 1.1l2-1.7v6.2c0 .9.7 1.6 1.6 1.6h2.7v-4h2.4v4h2.7c.9 0 1.6-.7 1.6-1.6v-6.2l2 1.7c.9.7 2.2 0 1.9-1.1l-1.3-5.2c-.5-2-2.3-3.4-4.4-3.4h-7.4Z" />
+      <path d="M16.5 20.8c2.1-5.9 5-9.9 9.1-13.2-.3 5.8-2.7 10.1-8.2 13.4" fill="none" stroke="var(--navy)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
+      <path d="m16.5 20.8 8.8-12.5" fill="none" stroke="var(--navy)" strokeLinecap="round" strokeWidth="1.1" />
     </svg>
   );
 }
@@ -771,7 +774,7 @@ function App() {
               onLog={() => { setSection("Overview"); setQuickLogOpen(true); }}
             />
           )}
-          {section === "Insights" && <InsightsPage data={data} summary={summary} />}
+          {(section === "Insights" || section === "Yearly") && <InsightsPage data={data} summary={summary} yearly={section === "Yearly"} onOpenYear={() => setSection("Yearly")} />}
           <footer className="page-footer">
             <span>Ludus Ephemeris <span className="footer-dot">·</span> Keep the good games close.</span>
             <span>{demoMode ? "Preview archive — sample records only" : "Your archive is private to your account"}</span>
@@ -1496,14 +1499,17 @@ function PlayEditor({
   );
 }
 
-function InsightsPage({ data, summary }: { data: WorkspaceData; summary: ReturnType<typeof summarizeCollection> }) {
+function InsightsPage({ data, summary, yearly, onOpenYear }: { data: WorkspaceData; summary: ReturnType<typeof summarizeCollection>; yearly: boolean; onOpenYear: () => void }) {
   const [rankMode, setRankMode] = useState<"plays" | "hours" | "pc100">("plays");
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [visibleRankingCount, setVisibleRankingCount] = useState(20);
   useEffect(() => setVisibleRankingCount(20), [rankMode, year]);
   const availableYears = [...new Set([String(new Date().getFullYear()), ...summary.years.map((item) => String(item.year))])].sort((a, b) => b.localeCompare(a));
-  const yearlyPlays = data.plays.filter((play) => year === "all" || play.date.startsWith(year));
-  const ranking = buildGameSummaries(data.games, yearlyPlays).sort((a, b) =>
+  const activeYear = yearly ? year : "all";
+  const selectedYearPlays = data.plays.filter((play) => activeYear === "all" || play.date.startsWith(activeYear));
+  const selectedYearHours = selectedYearPlays.reduce((sum, play) => sum + play.durationHours, 0);
+  const selectedYearGames = new Set(selectedYearPlays.map((play) => play.gameId ?? play.gameName));
+  const ranking = buildGameSummaries(data.games, selectedYearPlays).sort((a, b) =>
     rankMode === "plays" ? b.plays - a.plays : rankMode === "hours" ? b.hours - a.hours : b.pc100Score - a.pc100Score,
   ).filter((item) => rankMode === "pc100" ? item.pc100Score > 0 : item.plays > 0);
   const visibleRanking = ranking.slice(0, visibleRankingCount);
@@ -1511,19 +1517,32 @@ function InsightsPage({ data, summary }: { data: WorkspaceData; summary: ReturnT
   return (
     <>
       <div className="page-heading">
-        <div><h1>The bigger picture.</h1><p>Patterns emerge when you let the numbers play.</p></div>
-        <label className="select-field"><span>Year</span><select value={year} onChange={(event) => setYear(event.target.value)}><option value="all">All time</option>{availableYears.map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
+        <div><h1>{yearly ? "A year at a glance." : "The bigger picture."}</h1><p>{yearly ? "Explore the plays and patterns of one year." : "Your collection and play history, taken as a whole."}</p></div>
+        {yearly && <label className="select-field"><span>Year</span><select value={year} onChange={(event) => setYear(event.target.value)}>{availableYears.map((item) => <option value={item} key={item}>{item}</option>)}</select></label>}
       </div>
       <section className="insights-summary">
-        <div><span>PLAYED</span><strong>{year === "all" ? summary.totalPlays.toLocaleString() : yearlyPlays.length.toLocaleString()}</strong><small>{year === "all" ? "all-time sessions" : `${year} sessions`}</small></div>
-        <div><span>TIME AT THE TABLE</span><strong>{formatHours(year === "all" ? summary.totalHours : yearlyPlays.reduce((sum, play) => sum + play.durationHours, 0))}</strong><small>logged play time</small></div>
-        <div><span>COLLECTION SPEND</span><strong>{currency.format(summary.totalPurchaseSpend)}</strong><small>purchase prices recorded</small></div>
-        <div><span>NO PLAYS YET</span><strong>{summary.unplayedGames}</strong><small>titles still waiting</small></div>
+        {yearly ? (
+          <>
+            <div><span>PLAYED</span><strong>{selectedYearPlays.length.toLocaleString()}</strong><small>{year} sessions</small></div>
+            <div><span>TIME AT THE TABLE</span><strong>{formatHours(selectedYearHours)}</strong><small>logged play time</small></div>
+            <div><span>GAMES PLAYED</span><strong>{selectedYearGames.size.toLocaleString()}</strong><small>distinct titles</small></div>
+            <div><span>AVERAGE SESSION</span><strong>{formatHours(selectedYearPlays.length ? selectedYearHours / selectedYearPlays.length : 0)}</strong><small>time per play</small></div>
+          </>
+        ) : (
+          <>
+            <div><span>PLAYED</span><strong>{summary.totalPlays.toLocaleString()}</strong><small>all-time sessions</small></div>
+            <div><span>TIME AT THE TABLE</span><strong>{formatHours(summary.totalHours)}</strong><small>logged play time</small></div>
+            <div><span>COLLECTION SPEND</span><strong>{currency.format(summary.totalPurchaseSpend)}</strong><small>purchase prices recorded</small></div>
+            <div><span>NO PLAYS YET</span><strong>{summary.unplayedGames}</strong><small>titles still waiting</small></div>
+          </>
+        )}
       </section>
-      <section className="insight-chart-panel">
-        <div className="section-heading"><div><span className="section-index">YEAR-BY-YEAR</span><h2>Time at the table.</h2></div><span className="chart-unit">HOURS PLAYED</span></div>
-        <div className="wide-chart"><ChartFrame years={summary.years} metric="hours" onYearClick={(value) => setYear(String(value))} /></div>
-      </section>
+      {!yearly && (
+        <section className="insight-chart-panel">
+          <div className="section-heading"><div><span className="section-index">YEAR-BY-YEAR</span><h2>Time at the table.</h2></div><span className="chart-unit">HOURS PLAYED</span></div>
+          <div className="wide-chart"><ChartFrame years={summary.years} metric="hours" onYearClick={(value) => { setYear(String(value)); onOpenYear(); }} /></div>
+        </section>
+      )}
       <section className="rankings-panel">
         <div className="section-heading">
           <div><span className="section-index">THE LEADERBOARD</span><h2>Games with a story to tell.</h2></div>
@@ -1555,10 +1574,12 @@ function InsightsPage({ data, summary }: { data: WorkspaceData; summary: ReturnT
             )}
           </div>
         )}
-        <details className="scoring-note">
-          <summary>How the PC100 score works <ChevronDown size={15} /></summary>
-          <p>PC100 uses recency-adjusted solo play time, cost per hour, your rating, and your desire to play again. Imported plays without an explicit solo/multiplayer marker are left unclassified rather than guessed. The score is a starting point and its weights can be tuned.</p>
-        </details>
+        {rankMode === "pc100" && (
+          <details className="scoring-note">
+            <summary>How the PC100 score works <ChevronDown size={15} /></summary>
+            <p>PC100 uses recency-adjusted solo play time, cost per hour, your rating, and your desire to play again. Imported plays without an explicit solo/multiplayer marker are left unclassified rather than guessed. The score is a starting point and its weights can be tuned.</p>
+          </details>
+        )}
       </section>
     </>
   );
