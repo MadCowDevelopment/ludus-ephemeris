@@ -8,17 +8,22 @@ import {
   ChartColumnIncreasing,
   Check,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   CircleHelp,
   Clock3,
-  Gamepad2,
   Home,
   LibraryBig,
   ListFilter,
   LogOut,
+  Moon,
+  Pencil,
   Plus,
   RefreshCw,
+  Save,
   Search,
   Sparkles,
+  Sun,
   Upload,
   X,
 } from "lucide-react";
@@ -38,6 +43,7 @@ import { buildGameSummaries, normalizeName, summarizeCollection } from "./lib/st
 
 type Section = "Overview" | "Collection" | "Plays" | "Insights";
 type CollectionSort = "name" | "plays" | "hours" | "cost" | "rating" | "lastPlayed";
+type SortDirection = "asc" | "desc";
 
 const navigation: Array<{ label: Section; icon: typeof Home }> = [
   { label: "Overview", icon: Home },
@@ -61,6 +67,27 @@ function formatHours(hours: number): string {
 
 function recordId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function MeepleMark({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2.5a3.3 3.3 0 1 0 0 6.6 3.3 3.3 0 0 0 0-6.6ZM10.2 9.5c-1.6 0-2.9 1.1-3.3 2.6l-1 4.1c-.2.9.9 1.5 1.6.9L9 15.8v4.7c0 .8.6 1.4 1.4 1.4h3.2c.8 0 1.4-.6 1.4-1.4v-4.7l1.5 1.3c.7.6 1.8 0 1.6-.9l-1-4.1c-.4-1.5-1.7-2.6-3.3-2.6h-3.6Z" />
+    </svg>
+  );
+}
+
+function formValue(form: FormData, name: string): string {
+  const value = form.get(name);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function optionalNumber(form: FormData, name: string): number | undefined {
+  const value = formValue(form, name);
+  if (!value) return undefined;
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new Error(`Enter a valid number for ${name}.`);
+  return number;
 }
 
 function formatPlayDate(value: string): string {
@@ -111,6 +138,15 @@ function GameCover({ game, small = false }: { game: Game; small?: boolean }) {
 
 function App() {
   const [section, setSection] = useState<Section>("Overview");
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try {
+      const savedTheme = localStorage.getItem("ludus-ephemeris-theme");
+      if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
+    } catch {
+      // Fall back to the device preference if local storage is unavailable.
+    }
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
   const [user, setUser] = useState<User | null>(null);
   const [demoMode, setDemoMode] = useState(!firebaseConfigured);
   const [signedOut, setSignedOut] = useState(false);
@@ -118,7 +154,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [cloudRefreshVersion, setCloudRefreshVersion] = useState(0);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<{ id: string; message: string } | null>(null);
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [gameFormOpen, setGameFormOpen] = useState(false);
   const [gameFormName, setGameFormName] = useState("");
@@ -127,9 +163,10 @@ function App() {
   const [gameFormImageLink, setGameFormImageLink] = useState("");
   const [query, setQuery] = useState("");
   const [playsQuery, setPlaysQuery] = useState("");
-  const [playsYear, setPlaysYear] = useState("all");
+  const [playsYear, setPlaysYear] = useState(String(new Date().getFullYear()));
   const [ownedOnly, setOwnedOnly] = useState(true);
   const [collectionSort, setCollectionSort] = useState<CollectionSort>("name");
+  const [collectionSortDirection, setCollectionSortDirection] = useState<SortDirection>("asc");
   const [expandedGame, setExpandedGame] = useState("");
   const [pendingImport, setPendingImport] = useState<WorkbookImport | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -145,6 +182,29 @@ function App() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const cloudUserId = demoMode ? undefined : user?.uid;
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
+      "content",
+      theme === "dark" ? "#111522" : "#f5f6f8",
+    );
+    try {
+      localStorage.setItem("ludus-ephemeris-theme", theme);
+    } catch {
+      setError("Theme preference could not be saved in this browser.");
+    }
+  }, [theme]);
+
+  function showNotice(message: string) {
+    setNotice({ id: crypto.randomUUID(), message });
+  }
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(null), 6_000);
+    return () => window.clearTimeout(timeout);
+  }, [notice?.id]);
 
   useEffect(() => {
     if (!firebaseConfigured) return;
@@ -211,23 +271,54 @@ function App() {
   const gamesById = useMemo(() => new Map(data.games.map((game) => [game.id, game])), [data.games]);
   const sortedGames = useMemo(
     () => [...summary.games].sort((a, b) => {
+      let comparison: number;
+      const direction = collectionSortDirection === "asc" ? 1 : -1;
       switch (collectionSort) {
-        case "plays": return b.plays - a.plays || a.game.name.localeCompare(b.game.name);
-        case "hours": return b.hours - a.hours || a.game.name.localeCompare(b.game.name);
-        case "cost": return (a.costPerHour ?? Infinity) - (b.costPerHour ?? Infinity) || a.game.name.localeCompare(b.game.name);
-        case "rating": return (b.game.rating ?? 0) - (a.game.rating ?? 0) || a.game.name.localeCompare(b.game.name);
-        case "lastPlayed": return (b.lastPlayed ?? "").localeCompare(a.lastPlayed ?? "") || a.game.name.localeCompare(b.game.name);
-        default: return a.game.name.localeCompare(b.game.name);
+        case "plays": comparison = (a.plays - b.plays) * direction; break;
+        case "hours": comparison = (a.hours - b.hours) * direction; break;
+        case "cost":
+          if (a.costPerHour === undefined || b.costPerHour === undefined) {
+            return a.costPerHour === b.costPerHour ? a.game.name.localeCompare(b.game.name) : a.costPerHour === undefined ? 1 : -1;
+          }
+          comparison = (a.costPerHour - b.costPerHour) * direction;
+          break;
+        case "rating":
+          if (a.game.rating === undefined || b.game.rating === undefined) {
+            return a.game.rating === b.game.rating ? a.game.name.localeCompare(b.game.name) : a.game.rating === undefined ? 1 : -1;
+          }
+          comparison = (a.game.rating - b.game.rating) * direction;
+          break;
+        case "lastPlayed":
+          if (!a.lastPlayed || !b.lastPlayed) {
+            return a.lastPlayed === b.lastPlayed ? a.game.name.localeCompare(b.game.name) : !a.lastPlayed ? 1 : -1;
+          }
+          comparison = a.lastPlayed.localeCompare(b.lastPlayed) * direction;
+          break;
+        default: comparison = a.game.name.localeCompare(b.game.name) * direction;
       }
+      return comparison || a.game.name.localeCompare(b.game.name);
     }),
-    [summary.games, collectionSort],
+    [summary.games, collectionSort, collectionSortDirection],
   );
   const sortedPlays = useMemo(
     () => [...data.plays].sort((a, b) => b.date.localeCompare(a.date)),
     [data.plays],
   );
+
+  function changeCollectionSort(sort: CollectionSort) {
+    setCollectionSort(sort);
+    setCollectionSortDirection(sort === "name" || sort === "cost" ? "asc" : "desc");
+  }
+
+  function toggleCollectionSort(sort: CollectionSort) {
+    if (collectionSort === sort) {
+      setCollectionSortDirection((direction) => direction === "asc" ? "desc" : "asc");
+      return;
+    }
+    changeCollectionSort(sort);
+  }
   const years = useMemo(
-    () => [...new Set(data.plays.map((play) => play.date.slice(0, 4)))].sort((a, b) => b.localeCompare(a)),
+    () => [...new Set([String(new Date().getFullYear()), ...data.plays.map((play) => play.date.slice(0, 4))])].sort((a, b) => b.localeCompare(a)),
     [data.plays],
   );
 
@@ -335,7 +426,7 @@ function App() {
     };
     try {
       await saveRecord("plays", play);
-      setNotice(`Play logged: ${game.name}`);
+      showNotice(`Play logged: ${game.name}`);
       setError("");
       setLogScore("");
       setLogNotes("");
@@ -385,24 +476,46 @@ function App() {
       setGameFormImageLink("");
       setGameFormOpen(false);
       setError("");
-      setNotice(`${name} added to your collection.`);
+      showNotice(`${name} added to your collection.`);
     } catch (reason) {
       setError(`Could not add this game: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
   }
 
-  async function handleSaveImageLink(game: Game, link: string) {
-    const coverUrl = link.trim() ? parseCoverImageUrl(link) : undefined;
-    if (link.trim() && !coverUrl) {
+  async function handleSaveGame(game: Game): Promise<boolean> {
+    if (data.games.some((item) => item.id !== game.id && normalizeName(item.name) === normalizeName(game.name))) {
+      setError(`“${game.name}” is already in your collection.`);
+      return false;
+    }
+    if (game.defaultDurationHours !== undefined && game.defaultDurationHours <= 0) {
+      setError("Typical duration must be greater than zero.");
+      return false;
+    }
+    const coverUrl = game.coverUrl?.trim() ? parseCoverImageUrl(game.coverUrl) : undefined;
+    if (game.coverUrl?.trim() && !coverUrl) {
       setError("Enter a secure direct image URL. A BoardGameGeek /image/ID page is not a direct image.");
-      return;
+      return false;
     }
     try {
       await saveRecord("games", { ...game, coverUrl });
       setError("");
-      setNotice(coverUrl ? `Cover image saved for ${game.name}.` : `Cover image removed from ${game.name}.`);
+      showNotice(`${game.name} updated.`);
+      return true;
     } catch (reason) {
       setError(`Could not update ${game.name}: ${reason instanceof Error ? reason.message : String(reason)}`);
+      return false;
+    }
+  }
+
+  async function handleSavePlay(play: Play): Promise<boolean> {
+    try {
+      await saveRecord("plays", play);
+      setError("");
+      showNotice(`Play updated: ${play.gameName}`);
+      return true;
+    } catch (reason) {
+      setError(`Could not update this play: ${reason instanceof Error ? reason.message : String(reason)}`);
+      return false;
     }
   }
 
@@ -441,7 +554,7 @@ function App() {
         await importUserWorkspace(cloudUserId, importData, setImportProgress);
       }
       setData((current) => mergeImportedWorkspace(current, importData));
-      setNotice(`Imported ${importData.games.length.toLocaleString()} games and ${importData.plays.length.toLocaleString()} plays from ${pendingImport.sourceName}.`);
+      showNotice(`Imported ${importData.games.length.toLocaleString()} games and ${importData.plays.length.toLocaleString()} plays from ${pendingImport.sourceName}.`);
       setPendingImport(null);
       setImportProgress(null);
       setError("");
@@ -458,14 +571,23 @@ function App() {
     link.download = `ludus-ephemeris-export-${today()}.json`;
     link.click();
     URL.revokeObjectURL(url);
-    setNotice("Your archive has been exported as JSON.");
+    showNotice("Your archive has been exported as JSON.");
   }
 
   if (firebaseConfigured && signedOut && !demoMode) {
     return (
       <div className="signin-screen">
         <div className="signin-card">
-          <div className="brand-mark brand-mark--large"><Gamepad2 size={26} /></div>
+          <button
+            className="icon-button theme-toggle signin-theme-toggle"
+            type="button"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
+          <div className="brand-mark brand-mark--large"><MeepleMark size={26} /></div>
           <p className="signin-kicker">LUDUS EPHEMERIS</p>
           <h1>Your games.<br />Your record.</h1>
           <p className="signin-copy">Sign in with Google to open your private collection and play history.</p>
@@ -491,10 +613,9 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setSection("Overview"); }}>
-          <span className="brand-mark"><Gamepad2 size={20} strokeWidth={2.2} /></span>
+          <span className="brand-mark"><MeepleMark size={21} /></span>
           <span className="brand-type"><strong>Ludus</strong><small>EPHEMERIS</small></span>
         </a>
-        <div className="sidebar-label">YOUR ARCHIVE</div>
         <nav className="sidebar-nav" aria-label="Main navigation">
           {navigation.map(({ label, icon: Icon }) => (
             <button
@@ -505,6 +626,7 @@ function App() {
             >
               <Icon size={18} strokeWidth={1.8} />
               <span>{label}</span>
+              {label === "Collection" && <span className="nav-count">{data.games.length.toLocaleString()}</span>}
               {label === "Plays" && <span className="nav-count">{data.plays.length.toLocaleString()}</span>}
             </button>
           ))}
@@ -528,8 +650,17 @@ function App() {
 
       <main className="main-area">
         <header className="topbar">
-          <div className="breadcrumb"><span>Archive</span><ArrowRight size={13} /><strong>{section}</strong></div>
+          <div className="breadcrumb"><strong>{section}</strong></div>
           <div className="topbar-right">
+            <button
+              className="icon-button theme-toggle"
+              type="button"
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
             <span className={`connection-state${demoMode ? " connection-state--demo" : ""}`}>
               <span className="connection-dot" />{demoMode ? "Sample data" : isLoading ? "Loading" : "Cloud data"}
             </span>
@@ -543,14 +674,20 @@ function App() {
               </button>
             )}
             {firebaseConfigured && demoMode && <button className="button button--quiet button--small" onClick={handleGoogleSignIn}>Sign in</button>}
-            {!firebaseConfigured && <button className="help-link" onClick={() => setNotice("To connect your private account, add Firebase web credentials to .env.local and enable Google sign-in in Firebase Console.")}><CircleHelp size={15} /> Setup</button>}
+            {!firebaseConfigured && <button className="help-link" onClick={() => showNotice("To connect your private account, add Firebase web credentials to .env.local and enable Google sign-in in Firebase Console.")}><CircleHelp size={15} /> Setup</button>}
           </div>
         </header>
 
-        {(error || notice) && (
-          <div className={`notice-bar${error ? " notice-bar--error" : ""}`} role={error ? "alert" : "status"}>
-            <span>{error || notice}</span>
-            <button aria-label="Dismiss message" onClick={() => { setError(""); setNotice(""); }}><X size={16} /></button>
+        {error && (
+          <div className="notice-bar notice-bar--error" role="alert">
+            <span>{error}</span>
+            <button aria-label="Dismiss message" onClick={() => setError("")}><X size={16} /></button>
+          </div>
+        )}
+        {notice && (
+          <div className="toast-bar" role="status" aria-live="polite">
+            <Check size={17} /><span>{notice.message}</span>
+            <button aria-label="Dismiss message" onClick={() => setNotice(null)}><X size={16} /></button>
           </div>
         )}
 
@@ -590,7 +727,9 @@ function App() {
               ownedOnly={ownedOnly}
               setOwnedOnly={setOwnedOnly}
               collectionSort={collectionSort}
-              setCollectionSort={setCollectionSort}
+              collectionSortDirection={collectionSortDirection}
+              onCollectionSortChange={changeCollectionSort}
+              onCollectionSortToggle={toggleCollectionSort}
               query={query}
               setQuery={setQuery}
               expandedGame={expandedGame}
@@ -606,7 +745,7 @@ function App() {
               gameFormImageLink={gameFormImageLink}
               setGameFormImageLink={setGameFormImageLink}
               onAddGame={handleAddGame}
-              onSaveImageLink={handleSaveImageLink}
+              onSaveGame={handleSaveGame}
               fileInput={fileInput}
               onFile={handleFile}
               isParsing={isParsing}
@@ -627,6 +766,8 @@ function App() {
               year={playsYear}
               setYear={setPlaysYear}
               gamesById={gamesById}
+              games={data.games}
+              onSavePlay={handleSavePlay}
               onLog={() => { setSection("Overview"); setQuickLogOpen(true); }}
             />
           )}
@@ -883,6 +1024,36 @@ function ChartFrame({
   );
 }
 
+function SortableHeader({
+  label,
+  sort,
+  activeSort,
+  direction,
+  onSort,
+}: {
+  label: string;
+  sort: CollectionSort;
+  activeSort: CollectionSort;
+  direction: SortDirection;
+  onSort: (sort: CollectionSort) => void;
+}) {
+  const active = sort === activeSort;
+  const nextDirection = active ? (direction === "asc" ? "descending" : "ascending") : sort === "name" || sort === "cost" ? "ascending" : "descending";
+  const Icon = active ? (direction === "asc" ? ChevronUp : ChevronDown) : ChevronsUpDown;
+  return (
+    <th aria-sort={active ? direction === "asc" ? "ascending" : "descending" : "none"}>
+      <button
+        className={`sortable-heading${active ? " sortable-heading--active" : ""}`}
+        type="button"
+        aria-label={`Sort by ${label.toLowerCase()} ${nextDirection}`}
+        onClick={() => onSort(sort)}
+      >
+        {label}<Icon size={13} aria-hidden="true" />
+      </button>
+    </th>
+  );
+}
+
 function CollectionPage({
   summaries,
   allSummaries,
@@ -890,7 +1061,9 @@ function CollectionPage({
   ownedOnly,
   setOwnedOnly,
   collectionSort,
-  setCollectionSort,
+  collectionSortDirection,
+  onCollectionSortChange,
+  onCollectionSortToggle,
   query,
   setQuery,
   expandedGame,
@@ -906,7 +1079,7 @@ function CollectionPage({
   gameFormImageLink,
   setGameFormImageLink,
   onAddGame,
-  onSaveImageLink,
+  onSaveGame,
   fileInput,
   onFile,
   isParsing,
@@ -923,7 +1096,9 @@ function CollectionPage({
   ownedOnly: boolean;
   setOwnedOnly: (owned: boolean) => void;
   collectionSort: CollectionSort;
-  setCollectionSort: (sort: CollectionSort) => void;
+  collectionSortDirection: SortDirection;
+  onCollectionSortChange: (sort: CollectionSort) => void;
+  onCollectionSortToggle: (sort: CollectionSort) => void;
   query: string;
   setQuery: (query: string) => void;
   expandedGame: string;
@@ -939,7 +1114,7 @@ function CollectionPage({
   gameFormImageLink: string;
   setGameFormImageLink: (link: string) => void;
   onAddGame: (event: FormEvent<HTMLFormElement>) => void;
-  onSaveImageLink: (game: Game, link: string) => void;
+  onSaveGame: (game: Game) => Promise<boolean>;
   fileInput: React.RefObject<HTMLInputElement | null>;
   onFile: (file: File | undefined) => void;
   isParsing: boolean;
@@ -1016,7 +1191,7 @@ function CollectionPage({
         <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your games…" aria-label="Search games" /></label>
         <div className="collection-filters">
           <button className={`filter-pill${ownedOnly ? " filter-pill--active" : ""}`} onClick={() => setOwnedOnly(!ownedOnly)}><ListFilter size={14} /> {ownedOnly ? "Owned" : "All titles"} <ChevronDown size={13} /></button>
-          <label className="collection-sort"><span>Sort</span><select value={collectionSort} onChange={(event) => setCollectionSort(event.target.value as CollectionSort)} aria-label="Sort collection">
+          <label className="collection-sort"><span>Sort</span><select value={collectionSort} onChange={(event) => onCollectionSortChange(event.target.value as CollectionSort)} aria-label="Sort collection">
             <option value="name">Name</option><option value="plays">Most played</option><option value="hours">Most hours</option><option value="cost">Lowest cost/hour</option><option value="rating">Highest rating</option><option value="lastPlayed">Recently played</option>
           </select></label>
           <span className="results-count">{summaries.length.toLocaleString()} of {totalGames.toLocaleString()} titles</span>
@@ -1026,7 +1201,14 @@ function CollectionPage({
       {summaries.length > 0 ? (
         <div className="collection-table-wrap">
           <table className="collection-table">
-            <thead><tr><th>GAME</th><th>PLAYS</th><th>TIME PLAYED</th><th>COST / HOUR</th><th>RATING</th><th aria-label="Open details" /></tr></thead>
+            <thead><tr>
+              <SortableHeader label="GAME" sort="name" activeSort={collectionSort} direction={collectionSortDirection} onSort={onCollectionSortToggle} />
+              <SortableHeader label="PLAYS" sort="plays" activeSort={collectionSort} direction={collectionSortDirection} onSort={onCollectionSortToggle} />
+              <SortableHeader label="TIME PLAYED" sort="hours" activeSort={collectionSort} direction={collectionSortDirection} onSort={onCollectionSortToggle} />
+              <SortableHeader label="COST / HOUR" sort="cost" activeSort={collectionSort} direction={collectionSortDirection} onSort={onCollectionSortToggle} />
+              <SortableHeader label="RATING" sort="rating" activeSort={collectionSort} direction={collectionSortDirection} onSort={onCollectionSortToggle} />
+              <th aria-label="Open details" />
+            </tr></thead>
             <tbody>
               {summaries.map((item) => (
                 <FragmentRow
@@ -1034,7 +1216,7 @@ function CollectionPage({
                   item={item}
                   expanded={expandedGame === item.game.id}
                   onToggle={() => setExpandedGame(expandedGame === item.game.id ? "" : item.game.id)}
-                  onSaveImageLink={onSaveImageLink}
+                  onSaveGame={onSaveGame}
                 />
               ))}
             </tbody>
@@ -1052,18 +1234,14 @@ function FragmentRow({
   item,
   expanded,
   onToggle,
-  onSaveImageLink,
+  onSaveGame,
 }: {
   item: ReturnType<typeof buildGameSummaries>[number];
   expanded: boolean;
   onToggle: () => void;
-  onSaveImageLink: (game: Game, link: string) => void;
+  onSaveGame: (game: Game) => Promise<boolean>;
 }) {
-  const [imageLink, setImageLink] = useState(item.game.coverUrl ?? "");
-  const bggImageUrl = bggImagePageUrl(item.game.imageId ?? "");
-  useEffect(() => {
-    setImageLink(item.game.coverUrl ?? "");
-  }, [item.game.coverUrl]);
+  const [editing, setEditing] = useState(false);
 
   return (
     <>
@@ -1079,31 +1257,20 @@ function FragmentRow({
         <tr className="detail-row"><td colSpan={6}>
           <div className="game-detail">
             <GameCover game={item.game} />
-            <div className="game-detail-main">
-              <span className="section-index">GAME RECORD</span>
-              <h3>{item.game.name}</h3>
-              <p>{item.game.owned ? (item.game.location || "In your collection") : "Played title not marked as owned"}{item.game.purchaseDate ? ` · Added ${formatPlayDate(item.game.purchaseDate)}` : ""}</p>
-              {bggImageUrl && (
-                <a className="external-record-link" href={bggImageUrl} target="_blank" rel="noreferrer">
-                  Open image on BoardGameGeek <ArrowUpRight size={13} />
-                </a>
-              )}
-              <form className="game-image-form" onSubmit={(event) => {
-                event.preventDefault();
-                onSaveImageLink(item.game, imageLink);
-              }}>
-                <label className="field">
-                  <span>Cover image URL <em>optional</em></span>
-                  <input
-                    type="url"
-                    value={imageLink}
-                    onChange={(event) => setImageLink(event.target.value)}
-                    placeholder="https://cf.geekdo-images.com/…"
-                  />
-                  <small className="image-url-hint">Open the BGG image above, right-click the large image, choose “Copy image address,” then paste it here.</small>
-                </label>
-                <button className="button button--outline button--small" type="submit">Save cover</button>
-              </form>
+            <div className={`game-detail-main${editing ? " game-detail-main--editing" : ""}`}>
+              <div className="game-detail-heading">
+                <h3>{item.game.name}</h3>
+                <p>{item.game.owned ? (item.game.location || "In your collection") : "Played title not marked as owned"}{item.game.purchaseDate ? ` · Added ${formatPlayDate(item.game.purchaseDate)}` : ""}</p>
+                <button className="button button--outline button--small edit-record-button" type="button" onClick={() => setEditing(!editing)}>
+                  <Pencil size={13} /> {editing ? "Close editor" : "Edit game details"}
+                </button>
+                {item.game.imageId && (
+                  <a className="external-record-link" href={bggImagePageUrl(item.game.imageId)} target="_blank" rel="noreferrer">
+                    Open image on BoardGameGeek <ArrowUpRight size={13} />
+                  </a>
+                )}
+              </div>
+              {editing && <GameEditor game={item.game} onSave={onSaveGame} onCancel={() => setEditing(false)} />}
               <div className="detail-stats">
                 <div><span>Plays</span><strong>{item.plays}</strong></div>
                 <div><span>Hours</span><strong>{formatHours(item.hours)}</strong></div>
@@ -1121,6 +1288,79 @@ function FragmentRow({
   );
 }
 
+function GameEditor({
+  game,
+  onSave,
+  onCancel,
+}: {
+  game: Game;
+  onSave: (game: Game) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const [formError, setFormError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      const name = formValue(form, "name");
+      if (!name) throw new Error("Game name is required.");
+      const defaultDurationHours = optionalNumber(form, "defaultDurationHours");
+      if (defaultDurationHours !== undefined && defaultDurationHours <= 0) {
+        throw new Error("Typical duration must be greater than zero.");
+      }
+      const soloValue = formValue(form, "solo");
+      const saved = await onSave({
+        ...game,
+        name,
+        owned: form.get("owned") === "on",
+        solo: soloValue ? soloValue === "yes" : undefined,
+        defaultDurationHours,
+        purchaseDate: formValue(form, "purchaseDate") || undefined,
+        purchasePrice: optionalNumber(form, "purchasePrice"),
+        salePrice: optionalNumber(form, "salePrice"),
+        location: formValue(form, "location") || undefined,
+        rating: optionalNumber(form, "rating"),
+        wantToPlay: optionalNumber(form, "wantToPlay"),
+        bggId: formValue(form, "bggId") || undefined,
+        coverUrl: formValue(form, "coverUrl") || undefined,
+      });
+      if (saved) setFormError("");
+      if (saved) onCancel();
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  return (
+    <form className="record-editor" onSubmit={submit}>
+      <div className="record-editor-heading">
+        <div><h4>Edit game record</h4><p>All saved game fields are editable. Leave optional values blank to clear them.</p></div>
+        <span className="record-id">ID · {game.id}</span>
+      </div>
+      <div className="editor-fields">
+        <label className="field editor-field--wide"><span>Game name</span><input name="name" defaultValue={game.name} required /></label>
+        <label className="check-field"><input name="owned" type="checkbox" defaultChecked={game.owned} /><span>Owned</span></label>
+        <label className="field"><span>Solo play</span><select name="solo" defaultValue={game.solo === undefined ? "" : game.solo ? "yes" : "no"}><option value="">Not recorded</option><option value="yes">Supported</option><option value="no">Not supported</option></select></label>
+        <label className="field"><span>Typical duration · hours</span><input name="defaultDurationHours" type="number" min="0.01" step="0.01" defaultValue={game.defaultDurationHours ?? ""} /></label>
+        <label className="field"><span>Purchase date</span><input name="purchaseDate" type="date" defaultValue={game.purchaseDate ?? ""} /></label>
+        <label className="field"><span>Purchase price · €</span><input name="purchasePrice" type="number" min="0" step="0.01" defaultValue={game.purchasePrice ?? ""} /></label>
+        <label className="field"><span>Sale price · €</span><input name="salePrice" type="number" min="0" step="0.01" defaultValue={game.salePrice ?? ""} /></label>
+        <label className="field"><span>Location</span><input name="location" defaultValue={game.location ?? ""} /></label>
+        <label className="field"><span>Rating</span><input name="rating" type="number" step="any" defaultValue={game.rating ?? ""} /></label>
+        <label className="field"><span>Want to play</span><input name="wantToPlay" type="number" step="any" defaultValue={game.wantToPlay ?? ""} /></label>
+        <label className="field"><span>BoardGameGeek ID</span><input name="bggId" defaultValue={game.bggId ?? ""} /></label>
+        <label className="field editor-field--wide"><span>Cover image URL</span><input name="coverUrl" type="url" defaultValue={game.coverUrl ?? ""} placeholder="https://…" /></label>
+      </div>
+      {formError && <p className="editor-error" role="alert">{formError}</p>}
+      <div className="record-editor-actions">
+        <button className="button button--quiet button--small" type="button" onClick={onCancel}>Cancel</button>
+        <button className="button button--primary button--small" type="submit"><Save size={14} /> Save game</button>
+      </div>
+    </form>
+  );
+}
+
 function PlaysPage({
   plays,
   years,
@@ -1129,6 +1369,8 @@ function PlaysPage({
   year,
   setYear,
   gamesById,
+  games,
+  onSavePlay,
   onLog,
 }: {
   plays: Play[];
@@ -1138,8 +1380,12 @@ function PlaysPage({
   year: string;
   setYear: (year: string) => void;
   gamesById: Map<string, Game>;
+  games: Game[];
+  onSavePlay: (play: Play) => Promise<boolean>;
   onLog: () => void;
 }) {
+  const [editingPlay, setEditingPlay] = useState("");
+
   return (
     <>
       <div className="page-heading">
@@ -1156,30 +1402,111 @@ function PlaysPage({
       </div>
       {plays.length ? (
         <div className="play-log">
-          <div className="play-log-head"><span>DATE</span><span>GAME</span><span>PLAYERS</span><span>DURATION</span><span>NOTES / SCORE</span></div>
+          <div className="play-log-head"><span>DATE</span><span>GAME</span><span>PLAYERS</span><span>DURATION</span><span>NOTES / SCORE</span><span>EDIT</span></div>
           {plays.map((play) => (
-            <article className="play-log-row" key={play.id}>
-              <time dateTime={play.date}>{formatPlayDate(play.date)}</time>
-              <div className="play-log-game"><GameCover game={gamesById.get(play.gameId ?? "") ?? { id: play.id, name: play.gameName, owned: false }} small /><strong>{play.gameName}</strong></div>
-              <span className="play-type">{play.playType === "solo" ? "Solo" : play.playType === "multiplayer" ? `${play.players ?? "Multi"} players` : "Unspecified"}</span>
-              <strong className="duration-value">{formatHours(play.durationHours)}</strong>
-              <span className="play-notes">{play.score || play.notes || "—"}</span>
-            </article>
+            <div className="play-record" key={play.id}>
+              <article className="play-log-row">
+                <time dateTime={play.date}>{formatPlayDate(play.date)}</time>
+                <div className="play-log-game"><GameCover game={gamesById.get(play.gameId ?? "") ?? { id: play.id, name: play.gameName, owned: false }} small /><strong>{play.gameName}</strong></div>
+                <span className="play-type">{play.playType === "solo" ? "Solo" : play.playType === "multiplayer" ? `${play.players ?? "Multi"} players` : "Unspecified"}</span>
+                <strong className="duration-value">{formatHours(play.durationHours)}</strong>
+                <span className="play-notes">{play.score || play.notes || "—"}</span>
+                <button className="play-edit-button" type="button" aria-label={`Edit ${play.gameName} play from ${formatPlayDate(play.date)}`} onClick={() => setEditingPlay(editingPlay === play.id ? "" : play.id)}>
+                  <Pencil size={13} /><span>{editingPlay === play.id ? "Close" : "Edit"}</span>
+                </button>
+              </article>
+              {editingPlay === play.id && <PlayEditor play={play} games={games} onSave={onSavePlay} onCancel={() => setEditingPlay("")} />}
+            </div>
           ))}
         </div>
-      ) : <EmptyState title={query ? "No plays found" : "The log is empty"} text={query ? "Try a different search or year." : "Your next game night is the first page."} />}
+      ) : <EmptyState title={query ? "No plays found" : year === "all" ? "The log is empty" : `No plays in ${year}`} text={query ? "Try a different search or year." : year === "all" ? "Your next game night is the first page." : "Choose another year or log a new play."} />}
     </>
+  );
+}
+
+function PlayEditor({
+  play,
+  games,
+  onSave,
+  onCancel,
+}: {
+  play: Play;
+  games: Game[];
+  onSave: (play: Play) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const [formError, setFormError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      const gameName = formValue(form, "gameName");
+      const date = formValue(form, "date");
+      const durationHours = optionalNumber(form, "durationHours");
+      if (!gameName) throw new Error("Game name is required.");
+      if (!date) throw new Error("Play date is required.");
+      if (durationHours === undefined || durationHours <= 0) throw new Error("Duration must be greater than zero.");
+      const selectedPlayType = formValue(form, "playType");
+      let playType: PlayType;
+      if (selectedPlayType === "solo") playType = "solo";
+      else if (selectedPlayType === "multiplayer") playType = "multiplayer";
+      else if (selectedPlayType === "unknown") playType = "unknown";
+      else throw new Error("Choose a valid play type.");
+      const saved = await onSave({
+        ...play,
+        gameId: formValue(form, "gameId") || undefined,
+        gameName,
+        date,
+        durationHours,
+        playType,
+        players: optionalNumber(form, "players"),
+        score: formValue(form, "score") || undefined,
+        notes: formValue(form, "notes") || undefined,
+      });
+      if (saved) setFormError("");
+      if (saved) onCancel();
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  return (
+    <form className="record-editor play-editor" onSubmit={submit}>
+      <div className="record-editor-heading">
+        <div><h4>Edit play record</h4><p>Update the session details, including its linked title.</p></div>
+        <span className="record-id">ID · {play.id}</span>
+      </div>
+      <div className="editor-fields">
+        <label className="field editor-field--wide"><span>Game title</span><input name="gameName" defaultValue={play.gameName} required /></label>
+        <label className="field"><span>Linked game</span><select name="gameId" defaultValue={play.gameId ?? ""}><option value="">Not linked</option>{games.map((game) => <option value={game.id} key={game.id}>{game.name}</option>)}</select></label>
+        <label className="field"><span>Date</span><input name="date" type="date" defaultValue={play.date} required /></label>
+        <label className="field"><span>Duration · hours</span><input name="durationHours" type="number" min="0.01" step="0.01" defaultValue={play.durationHours} required /></label>
+        <label className="field"><span>Play type</span><select name="playType" defaultValue={play.playType}><option value="solo">Solo</option><option value="multiplayer">Multiplayer</option><option value="unknown">Unspecified</option></select></label>
+        <label className="field"><span>Players</span><input name="players" type="number" min="1" step="1" defaultValue={play.players ?? ""} /></label>
+        <label className="field"><span>Score</span><input name="score" defaultValue={play.score ?? ""} /></label>
+        <label className="field editor-field--full"><span>Notes</span><textarea name="notes" rows={2} defaultValue={play.notes ?? ""} /></label>
+      </div>
+      {formError && <p className="editor-error" role="alert">{formError}</p>}
+      <div className="record-editor-actions">
+        <button className="button button--quiet button--small" type="button" onClick={onCancel}>Cancel</button>
+        <button className="button button--primary button--small" type="submit"><Save size={14} /> Save play</button>
+      </div>
+    </form>
   );
 }
 
 function InsightsPage({ data, summary }: { data: WorkspaceData; summary: ReturnType<typeof summarizeCollection> }) {
   const [rankMode, setRankMode] = useState<"plays" | "hours" | "pc100">("plays");
   const [year, setYear] = useState(String(new Date().getFullYear()));
-  const availableYears = summary.years.map((item) => String(item.year)).sort((a, b) => b.localeCompare(a));
+  const [visibleRankingCount, setVisibleRankingCount] = useState(20);
+  useEffect(() => setVisibleRankingCount(20), [rankMode, year]);
+  const availableYears = [...new Set([String(new Date().getFullYear()), ...summary.years.map((item) => String(item.year))])].sort((a, b) => b.localeCompare(a));
   const yearlyPlays = data.plays.filter((play) => year === "all" || play.date.startsWith(year));
   const ranking = buildGameSummaries(data.games, yearlyPlays).sort((a, b) =>
     rankMode === "plays" ? b.plays - a.plays : rankMode === "hours" ? b.hours - a.hours : b.pc100Score - a.pc100Score,
-  ).filter((item) => rankMode === "pc100" ? item.pc100Score > 0 : item.plays > 0).slice(0, 10);
+  ).filter((item) => rankMode === "pc100" ? item.pc100Score > 0 : item.plays > 0);
+  const visibleRanking = ranking.slice(0, visibleRankingCount);
 
   return (
     <>
@@ -1207,7 +1534,7 @@ function InsightsPage({ data, summary }: { data: WorkspaceData; summary: ReturnT
           </div>
         </div>
         <div className="ranking-list">
-          {ranking.map((item, index) => (
+          {visibleRanking.map((item, index) => (
             <div className="ranking-list-row" key={item.game.id}>
               <span className="ranking-number">{String(index + 1).padStart(2, "0")}</span>
               <GameCover game={item.game} small />
@@ -1218,6 +1545,16 @@ function InsightsPage({ data, summary }: { data: WorkspaceData; summary: ReturnT
           ))}
           {!ranking.length && <EmptyState title="No ranking data yet" text="Log plays to build rankings from your own records." />}
         </div>
+        {ranking.length > 0 && (
+          <div className="ranking-actions">
+            <span>Showing {visibleRanking.length.toLocaleString()} of {ranking.length.toLocaleString()} games</span>
+            {visibleRanking.length < ranking.length && (
+              <button className="button button--outline button--small" type="button" onClick={() => setVisibleRankingCount((count) => count + 20)}>
+                Show 20 more
+              </button>
+            )}
+          </div>
+        )}
         <details className="scoring-note">
           <summary>How the PC100 score works <ChevronDown size={15} /></summary>
           <p>PC100 uses recency-adjusted solo play time, cost per hour, your rating, and your desire to play again. Imported plays without an explicit solo/multiplayer marker are left unclassified rather than guessed. The score is a starting point and its weights can be tuned.</p>
