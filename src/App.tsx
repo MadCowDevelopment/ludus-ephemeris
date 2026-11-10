@@ -1223,7 +1223,7 @@ function CollectionPage({
               <SortableHeader label="TIME PLAYED" sort="hours" activeSort={collectionSort} direction={collectionSortDirection} onSort={onCollectionSortToggle} />
               <SortableHeader label="COST / HOUR" sort="cost" activeSort={collectionSort} direction={collectionSortDirection} onSort={onCollectionSortToggle} />
               <SortableHeader label="RATING" sort="rating" activeSort={collectionSort} direction={collectionSortDirection} onSort={onCollectionSortToggle} />
-              <th aria-label="Open details" />
+              <th aria-label="Edit game" />
             </tr></thead>
             <tbody>
               {summaries.map((item) => (
@@ -1261,13 +1261,28 @@ function FragmentRow({
 
   return (
     <>
-      <tr className={`collection-row${expanded ? " collection-row--expanded" : ""}`}>
-        <td><button className="game-cell" onClick={onToggle}><GameCover game={item.game} small /><span><strong>{item.game.name}</strong><small>{item.game.solo ? "Solo-capable" : item.game.owned ? "In collection" : "Played title · not marked owned"}</small></span></button></td>
+      <tr
+        className={`collection-row${expanded ? " collection-row--expanded" : ""}`}
+        onClick={(event) => {
+          if (event.target instanceof Element && event.target.closest("button, a, input, select, textarea")) return;
+          onToggle();
+        }}
+      >
+        <td><button className="game-cell" aria-expanded={expanded} onClick={onToggle}><GameCover game={item.game} small /><span><strong>{item.game.name}</strong><small>{item.game.solo ? "Solo-capable" : item.game.owned ? "In collection" : "Played title · not marked owned"}</small></span></button></td>
         <td className="numeric-cell">{item.plays.toLocaleString()}</td>
         <td className="numeric-cell">{formatHours(item.hours)}</td>
         <td className="numeric-cell">{item.costPerHour === undefined ? "—" : `${currency.format(item.costPerHour)} / h`}</td>
         <td><span className="rating-cell">{item.game.rating ? `${item.game.rating}/10` : "—"}</span></td>
-        <td><button className="row-arrow" aria-label={`${expanded ? "Close" : "Open"} ${item.game.name} details`} onClick={onToggle}><ArrowUpRight size={16} /></button></td>
+        <td><button
+          className="row-edit-button"
+          type="button"
+          aria-label={`Edit ${item.game.name}`}
+          title={`Edit ${item.game.name}`}
+          onClick={() => {
+            if (!expanded) onToggle();
+            setEditing(true);
+          }}
+        ><Pencil size={15} /></button></td>
       </tr>
       {expanded && (
         <tr className="detail-row"><td colSpan={6}>
