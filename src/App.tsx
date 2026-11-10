@@ -30,6 +30,13 @@ import {
 import type { User } from "firebase/auth";
 import type { Game, Play, PlayType, WorkspaceData } from "./types";
 import { readDemoWorkspace, saveDemoWorkspace } from "./data/demo";
+import {
+  emptyWorkspaceData,
+  mergeWorkspaceData,
+  readUserWorkspaceCache,
+  upsertWorkspaceRecord,
+  writeUserWorkspaceCache,
+} from "./lib/workspace-cache";
 import { firebaseConfigured } from "./lib/firebase-config";
 import { bggImagePageUrl, parseCoverImageUrl } from "./lib/image-url";
 import type { ImportProgress } from "./lib/repository";
@@ -244,18 +251,41 @@ function App() {
 
   useEffect(() => {
     if (!cloudUserId) return;
-    setIsLoading(true);
     setError("");
     let active = true;
-    setData({ games: [], plays: [], rankings: [] });
+    let cachedWorkspace: ReturnType<typeof readUserWorkspaceCache> = null;
+    try {
+      cachedWorkspace = readUserWorkspaceCache(cloudUserId);
+    } catch (reason) {
+      setError(`Could not read the local workspace cache: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+    setData(cachedWorkspace?.workspace ?? emptyWorkspaceData());
+    setIsLoading(!cachedWorkspace || cloudRefreshVersion > 0);
     void (async () => {
       try {
-        const { fetchUserWorkspace } = await import("./lib/repository");
-        const workspace = await fetchUserWorkspace(cloudUserId);
-        if (active) setData(workspace);
+        const { syncUserWorkspace } = await import("./lib/repository");
+        const result = await syncUserWorkspace(cloudUserId, cachedWorkspace?.cursor);
+        if (active) {
+          let latestCache = cachedWorkspace;
+          try {
+            latestCache = readUserWorkspaceCache(cloudUserId) ?? cachedWorkspace;
+          } catch (reason) {
+            setError(`Could not read the local workspace cache: ${reason instanceof Error ? reason.message : String(reason)}`);
+          }
+          const workspace = mergeWorkspaceData(
+            latestCache?.workspace ?? cachedWorkspace?.workspace ?? emptyWorkspaceData(),
+            result.workspace,
+          );
+          setData(workspace);
+          try {
+            writeUserWorkspaceCache(cloudUserId, { workspace, cursor: result.cursor });
+          } catch (reason) {
+            setError(`Could not update the local workspace cache: ${reason instanceof Error ? reason.message : String(reason)}`);
+          }
+        }
       } catch (reason) {
         if (active) {
-          setError(`Could not load cloud storage: ${reason instanceof Error ? reason.message : String(reason)}`);
+          setError(`Could not sync cloud storage: ${reason instanceof Error ? reason.message : String(reason)}`);
         }
       } finally {
         if (active) setIsLoading(false);
@@ -357,46 +387,20 @@ function App() {
   }
 
   async function saveRecord(kind: "games" | "plays", record: Game | Play) {
+    const updatedWorkspace = upsertWorkspaceRecord(data, kind, record);
+    setData(updatedWorkspace);
     if (cloudUserId) {
+      try {
+        const cache = readUserWorkspaceCache(cloudUserId);
+        writeUserWorkspaceCache(cloudUserId, {
+          workspace: updatedWorkspace,
+          cursor: cache?.cursor ?? null,
+        });
+      } catch (reason) {
+        setError(`Could not save the local workspace cache: ${reason instanceof Error ? reason.message : String(reason)}`);
+      }
       const { saveUserRecord } = await import("./lib/repository");
       await saveUserRecord(cloudUserId, kind, record);
-      setData((current) => {
-        if (kind === "games") {
-          const game = record as Game;
-          return {
-            ...current,
-            games: current.games.some((item) => item.id === game.id)
-              ? current.games.map((item) => item.id === game.id ? game : item)
-              : [...current.games, game],
-          };
-        }
-        const play = record as Play;
-        return {
-          ...current,
-          plays: current.plays.some((item) => item.id === play.id)
-            ? current.plays.map((item) => item.id === play.id ? play : item)
-            : [play, ...current.plays],
-        };
-      });
-    } else {
-      setData((current) => {
-        if (kind === "games") {
-          const game = record as Game;
-          return {
-            ...current,
-            games: current.games.some((item) => item.id === game.id)
-              ? current.games.map((item) => item.id === game.id ? game : item)
-              : [...current.games, game],
-          };
-        }
-        const play = record as Play;
-        return {
-          ...current,
-          plays: current.plays.some((item) => item.id === play.id)
-            ? current.plays.map((item) => item.id === play.id ? play : item)
-            : [play, ...current.plays],
-        };
-      });
     }
   }
 
@@ -553,10 +557,23 @@ function App() {
         await importUserWorkspace(cloudUserId, importData, setImportProgress);
       }
       setData((current) => mergeImportedWorkspace(current, importData));
+      let cacheError = "";
+      if (cloudUserId) {
+        try {
+          const cache = readUserWorkspaceCache(cloudUserId);
+          const workspace = mergeImportedWorkspace(cache?.workspace ?? data, importData);
+          writeUserWorkspaceCache(cloudUserId, {
+            workspace,
+            cursor: cache?.cursor ?? null,
+          });
+        } catch (reason) {
+          cacheError = `Import completed, but the local cache could not be updated: ${reason instanceof Error ? reason.message : String(reason)}`;
+        }
+      }
       showNotice(`Imported ${importData.games.length.toLocaleString()} games and ${importData.plays.length.toLocaleString()} plays from ${pendingImport.sourceName}.`);
       setPendingImport(null);
       setImportProgress(null);
-      setError("");
+      setError(cacheError);
     } catch (reason) {
       setError(`Import stopped before completion. You can retry safely: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
