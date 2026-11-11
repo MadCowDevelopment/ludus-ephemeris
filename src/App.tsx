@@ -190,6 +190,10 @@ function App() {
   const cloudUserId = demoMode ? undefined : user?.uid;
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [section]);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
       "content",
@@ -593,6 +597,21 @@ function App() {
   if (firebaseConfigured && signedOut && !demoMode) {
     return (
       <div className="signin-screen">
+        <div className="signin-layout">
+        <section className="signin-story" aria-labelledby="welcome-title">
+          <div className="signin-brand"><span className="brand-mark"><MeepleMark size={24} /></span><span>Ludus Ephemeris</span></div>
+          <div>
+            <p className="signin-eyebrow">A PERSONAL BOARD-GAME YEARBOOK</p>
+            <h1 id="welcome-title">Good games.<br />Great company.<br /><span>A story worth keeping.</span></h1>
+            <p className="signin-story-copy">From the first play to the old favourites. Make a little room for the memories behind your collection.</p>
+          </div>
+          <div className="signin-features">
+            <div><LibraryBig size={20} /><span><strong>A home for every game</strong><small>Your collection, thoughtfully organised.</small></span></div>
+            <div><Clock3 size={20} /><span><strong>Every session remembered</strong><small>Log the plays, people, and little details.</small></span></div>
+            <div><ChartColumnIncreasing size={20} /><span><strong>Find your favourites</strong><small>See the patterns in your time at the table.</small></span></div>
+          </div>
+          <span className="signin-story-footer"><MeepleMark size={18} /> Keep the good games close.</span>
+        </section>
         <div className="signin-card">
           <button
             className="icon-button theme-toggle signin-theme-toggle"
@@ -604,13 +623,15 @@ function App() {
             {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
           </button>
           <div className="brand-mark brand-mark--large"><MeepleMark size={26} /></div>
-          <p className="signin-kicker">LUDUS EPHEMERIS</p>
-          <h1>Your games.<br />Your record.</h1>
+          <p className="signin-kicker">YOUR NEXT CHAPTER</p>
+          <h2>Welcome to<br />your archive.</h2>
           <p className="signin-copy">Sign in with Google to open your private collection and play history.</p>
-          <button className="button button--primary signin-button" onClick={handleGoogleSignIn}>Continue with Google</button>
-          <button className="text-button signin-preview" onClick={openDemo}>Explore a sample archive</button>
+          <button className="button button--primary signin-button" onClick={handleGoogleSignIn}>Continue with Google <ArrowRight size={17} /></button>
+          <div className="signin-divider"><span>just looking around?</span></div>
+          <button className="button button--outline signin-button signin-preview" onClick={openDemo}>Explore a sample archive <ArrowUpRight size={16} /></button>
           <p className="signin-footnote">Sample data stays in this browser. Your signed-in records are private to your account.</p>
           {error && <p className="form-error" role="alert">{error}</p>}
+        </div>
         </div>
       </div>
     );
@@ -627,17 +648,21 @@ function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <aside className="sidebar">
-        <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setSection("Overview"); }}>
+        <a className="brand" href="#" aria-label="Ludus Ephemeris overview" onClick={(event) => { event.preventDefault(); setSection("Overview"); }}>
           <span className="brand-mark"><MeepleMark size={21} /></span>
           <span className="brand-type"><strong>Ludus</strong><small>EPHEMERIS</small></span>
         </a>
+        <div className="sidebar-label">YOUR ARCHIVE</div>
         <nav className="sidebar-nav" aria-label="Main navigation">
           {navigation.map(({ label, icon: Icon }) => (
             <button
               key={label}
               className={`nav-item${section === label ? " nav-item--active" : ""}`}
               onClick={() => setSection(label)}
+              aria-label={label}
+              title={label}
               aria-current={section === label ? "page" : undefined}
             >
               <Icon size={18} strokeWidth={1.8} />
@@ -666,7 +691,7 @@ function App() {
 
       <main className="main-area">
         <header className="topbar">
-          <div className="breadcrumb"><strong>{section}</strong></div>
+          <div className="breadcrumb"><span>My archive</span><span aria-hidden="true">/</span><strong>{section}</strong></div>
           <div className="topbar-right">
             <button
               className="icon-button theme-toggle"
@@ -707,7 +732,7 @@ function App() {
           </div>
         )}
 
-        <div className="page-content">
+        <div className="page-content" id="main-content" tabIndex={-1}>
           {section === "Overview" && (
             <OverviewPage
               data={data}
@@ -732,7 +757,17 @@ function App() {
               setLogNotes={setLogNotes}
               onLogPlay={handleLogPlay}
               setSection={setSection}
-              setPlaysYear={setPlaysYear}
+              onOpenHistory={(year, gameName = "") => {
+                setPlaysYear(year);
+                setPlaysQuery(gameName);
+                setSection("Plays");
+              }}
+              onOpenGame={(game) => {
+                setQuery(game.name);
+                setOwnedOnly(false);
+                setExpandedGame(game.id);
+                setSection("Collection");
+              }}
             />
           )}
           {section === "Collection" && (
@@ -797,7 +832,7 @@ function App() {
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {navigation.map(({ label, icon: Icon }) => (
-          <button key={label} className={section === label ? "mobile-nav-item mobile-nav-item--active" : "mobile-nav-item"} onClick={() => setSection(label)}>
+          <button key={label} className={section === label ? "mobile-nav-item mobile-nav-item--active" : "mobile-nav-item"} onClick={() => setSection(label)} aria-current={section === label ? "page" : undefined}>
             <Icon size={18} /><span>{label}</span>
           </button>
         ))}
@@ -829,7 +864,8 @@ function OverviewPage({
   setLogNotes,
   onLogPlay,
   setSection,
-  setPlaysYear,
+  onOpenHistory,
+  onOpenGame,
 }: {
   data: WorkspaceData;
   summary: ReturnType<typeof summarizeCollection>;
@@ -853,7 +889,8 @@ function OverviewPage({
   setLogNotes: (notes: string) => void;
   onLogPlay: (event: FormEvent<HTMLFormElement>) => void;
   setSection: (section: Section) => void;
-  setPlaysYear: (year: string) => void;
+  onOpenHistory: (year: string, gameName?: string) => void;
+  onOpenGame: (game: Game) => void;
 }) {
   const currentYear = String(new Date().getFullYear());
   const currentYearSummary = summary.years.find((item) => item.year === Number(currentYear));
@@ -866,11 +903,12 @@ function OverviewPage({
     <>
       <div className="page-heading page-heading--overview">
         <div>
+          <span className="page-kicker"><span /> YOUR PERSONAL YEARBOOK</span>
           <h1>Your games, in motion.</h1>
           <p>A living record of the games you bring to the table.</p>
         </div>
         <div className="heading-actions">
-          <button className="button button--primary" onClick={() => setQuickLogOpen(!quickLogOpen)}>
+          <button className="button button--primary" aria-expanded={quickLogOpen} aria-controls="quick-log-panel" onClick={() => setQuickLogOpen(!quickLogOpen)}>
             <Plus size={17} /> Log a play
           </button>
           <button className="button button--outline" onClick={() => setSection("Collection")}>Browse collection <ArrowUpRight size={15} /></button>
@@ -878,7 +916,7 @@ function OverviewPage({
       </div>
 
       {quickLogOpen && (
-        <section className="quick-log-panel" aria-labelledby="quick-log-title">
+        <section className="quick-log-panel" id="quick-log-panel" aria-labelledby="quick-log-title">
           <div className="quick-log-heading">
             <div><span className="section-index">QUICK ENTRY</span><h2 id="quick-log-title">Add a play to the record</h2></div>
             <button className="icon-button" aria-label="Close play form" onClick={() => setQuickLogOpen(false)}><X size={17} /></button>
@@ -895,9 +933,11 @@ function OverviewPage({
                     (game) => game.owned && normalizeName(game.name) === normalizeName(name),
                   );
                   setLogGameId(selected?.id ?? "");
+                  if (selected) setLogDuration(String(selected.defaultDurationHours ?? 1));
                 }}
                 placeholder="Search your games…"
                 autoComplete="off"
+                autoFocus
                 required
               />
               <datalist id="quick-log-games">
@@ -923,22 +963,22 @@ function OverviewPage({
 
       <section className="overview-metrics" aria-label="Collection highlights">
         <div className="metric-item metric-item--lead">
-          <span className="metric-label">ALL-TIME PLAYS</span>
+          <span className="metric-label"><Clock3 size={16} /> ALL-TIME PLAYS</span>
           <strong>{summary.totalPlays.toLocaleString()}</strong>
           <span className="metric-sub">{formatHours(summary.totalHours)} at the table</span>
         </div>
         <div className="metric-item">
-          <span className="metric-label">IN {currentYear}</span>
+          <span className="metric-label"><CalendarDays size={16} /> IN {currentYear}</span>
           <strong>{currentYearSummary?.plays.toLocaleString() ?? "0"}</strong>
           <span className="metric-sub">{formatHours(currentYearSummary?.hours ?? 0)} played</span>
         </div>
         <div className="metric-item">
-          <span className="metric-label">IN YOUR COLLECTION</span>
+          <span className="metric-label"><LibraryBig size={16} /> COLLECTION</span>
           <strong>{summary.ownedGames.toLocaleString()}</strong>
           <span className="metric-sub">of {summary.totalGames.toLocaleString()} titles</span>
         </div>
         <div className="metric-item">
-          <span className="metric-label">YET TO HIT THE TABLE</span>
+          <span className="metric-label"><Sparkles size={16} /> STILL TO DISCOVER</span>
           <strong>{summary.unplayedGames.toLocaleString()}</strong>
           <span className="metric-sub">games with no logged plays</span>
         </div>
@@ -951,12 +991,13 @@ function OverviewPage({
         </div>
         <div className="activity-chart-wrap">
           <div className="chart-callout">
-            <span className="chart-callout-label">THIS YEAR</span>
+            <span className="chart-callout-label">{currentYear} CHAPTER</span>
             <strong>{currentYearSummary?.plays ?? 0}</strong>
             <span>plays recorded</span>
+            <button className="chart-callout-link" onClick={() => onOpenHistory(currentYear)}>View this year <ArrowRight size={14} /></button>
           </div>
           <div className="activity-chart">
-            <ChartFrame years={chartYears} onYearClick={(year) => { setPlaysYear(String(year)); setSection("Plays"); }} />
+            <ChartFrame years={chartYears} onYearClick={(year) => onOpenHistory(String(year))} />
           </div>
         </div>
         <div className="chart-footnote"><span><i className="legend-dot" /> Plays logged each year</span><span>{summary.years[0]?.year ?? "—"}—{currentYear}</span></div>
@@ -966,12 +1007,12 @@ function OverviewPage({
         <section className="recent-section">
           <div className="section-heading section-heading--compact">
             <div><span className="section-index">FROM THE LOG</span><h2>Recent plays</h2></div>
-            <button className="text-link" onClick={() => setSection("Plays")}>Full play history <ArrowRight size={15} /></button>
+            <button className="text-link" onClick={() => onOpenHistory("all")}>Full history <ArrowRight size={15} /></button>
           </div>
           {recentPlays.length ? (
             <div className="recent-list">
               {recentPlays.map((play) => (
-                <button className="recent-row" key={play.id} onClick={() => setSection("Plays")}>
+                <button className="recent-row" key={play.id} onClick={() => onOpenHistory(play.date.slice(0, 4), play.gameName)}>
                   <GameCover game={gamesById.get(play.gameId ?? "") ?? { id: play.id, name: play.gameName, owned: false }} small />
                   <span className="recent-game"><strong>{play.gameName}</strong><small>{play.notes || play.score || (play.playType === "solo" ? "Solo session" : "Table session")}</small></span>
                   <span className="recent-meta"><strong>{formatHours(play.durationHours)}</strong><small>{formatPlayDate(play.date)}</small></span>
@@ -989,7 +1030,7 @@ function OverviewPage({
           {currentTop.some((entry) => entry.plays > 0) ? (
             <div className="top-games-list">
               {currentTop.filter((entry) => entry.plays > 0).map((entry, index) => (
-                <button className="top-game-row" key={entry.game.id} onClick={() => setSection("Collection")}>
+                <button className="top-game-row" key={entry.game.id} onClick={() => onOpenGame(entry.game)}>
                   <span className="ranking-number">{String(index + 1).padStart(2, "0")}</span>
                   <GameCover game={entry.game} small />
                   <span className="top-game-copy"><strong>{entry.game.name}</strong><small>{formatHours(entry.hours)} played</small></span>
@@ -1025,13 +1066,13 @@ function ChartFrame({
         {years.map((item) => (
           <button
             type="button"
-            className="chart-bar-group"
+            className={`chart-bar-group${item.year === new Date().getFullYear() ? " chart-bar-group--current" : ""}`}
             key={item.year}
             aria-label={`${item.year}: ${item.plays} plays, ${formatHours(item.hours)}. Open play history.`}
             onClick={() => onYearClick(item.year)}
           >
             <span className="bar-tooltip">{metric === "plays" ? `${item.plays} plays` : formatHours(item.hours)}</span>
-            <i className="chart-bar" style={{ height: `${Math.max(3, ((metric === "plays" ? item.plays : item.hours) / maximum) * 100)}%` }} />
+            <span className="chart-bar-track"><i className="chart-bar" style={{ height: `${((metric === "plays" ? item.plays : item.hours) / maximum) * 100}%` }} /></span>
             <span className="chart-year">{item.year}</span>
           </button>
         ))}
@@ -1204,9 +1245,9 @@ function CollectionPage({
       )}
 
       <div className="collection-toolbar">
-        <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your games…" aria-label="Search games" /></label>
+        <div className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search your games…" aria-label="Search games" />{query && <button className="icon-button" aria-label="Clear game search" onClick={() => setQuery("")}><X size={15} /></button>}</div>
         <div className="collection-filters">
-          <button className={`filter-pill${ownedOnly ? " filter-pill--active" : ""}`} onClick={() => setOwnedOnly(!ownedOnly)}><ListFilter size={14} /> {ownedOnly ? "Owned" : "All titles"} <ChevronDown size={13} /></button>
+          <button className={`filter-pill${ownedOnly ? " filter-pill--active" : ""}`} aria-pressed={ownedOnly} onClick={() => setOwnedOnly(!ownedOnly)}><ListFilter size={14} /> {ownedOnly ? "Owned" : "All titles"} <ChevronDown size={13} /></button>
           <label className="collection-sort"><span>Sort</span><select value={collectionSort} onChange={(event) => onCollectionSortChange(event.target.value as CollectionSort)} aria-label="Sort collection">
             <option value="name">Name</option><option value="plays">Most played</option><option value="hours">Most hours</option><option value="cost">Lowest cost/hour</option><option value="rating">Highest rating</option><option value="lastPlayed">Recently played</option>
           </select></label>
@@ -1428,7 +1469,7 @@ function PlaysPage({
         <span><CalendarDays size={15} /> {year === "all" ? "All years" : year}</span>
       </div>
       <div className="plays-toolbar">
-        <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a game in your log…" aria-label="Search play history" /></label>
+        <div className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a game in your log…" aria-label="Search play history" />{query && <button className="icon-button" aria-label="Clear play search" onClick={() => setQuery("")}><X size={15} /></button>}</div>
         <label className="select-field"><span>Year</span><select value={year} onChange={(event) => setYear(event.target.value)}><option value="all">All years</option>{years.map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
       </div>
       {plays.length ? (
@@ -1575,9 +1616,9 @@ function InsightsPage({ data, summary, yearly, onOpenYear }: { data: WorkspaceDa
         <div className="section-heading">
           <div><span className="section-index">THE LEADERBOARD</span><h2>Games with a story to tell.</h2></div>
           <div className="segmented-control" role="group" aria-label="Ranking metric">
-            <button className={rankMode === "plays" ? "selected" : ""} onClick={() => setRankMode("plays")}>Plays</button>
-            <button className={rankMode === "hours" ? "selected" : ""} onClick={() => setRankMode("hours")}>Hours</button>
-            <button className={rankMode === "pc100" ? "selected" : ""} onClick={() => setRankMode("pc100")}>PC100</button>
+            <button className={rankMode === "plays" ? "selected" : ""} aria-pressed={rankMode === "plays"} onClick={() => setRankMode("plays")}>Plays</button>
+            <button className={rankMode === "hours" ? "selected" : ""} aria-pressed={rankMode === "hours"} onClick={() => setRankMode("hours")}>Hours</button>
+            <button className={rankMode === "pc100" ? "selected" : ""} aria-pressed={rankMode === "pc100"} onClick={() => setRankMode("pc100")}>PC100</button>
           </div>
         </div>
         <div className="ranking-list">
